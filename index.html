@@ -699,7 +699,7 @@
 
     /* ---------- ball physics ---------- */
     var vel = new THREE.Vector3();
-    var flying = false, sunk = false, pinHitSfx = false;
+    var flying = false, sunk = false, pinHitSfx = false, lastPutt = false;
     var shotStart = new THREE.Vector3();
 
     // Calibrated from Brecken's swings; nudged down again per feedback.
@@ -723,9 +723,10 @@
       var p = putting
         ? THREE.MathUtils.clamp((power - 5) / 40, 0.02, 1)
         : THREE.MathUtils.clamp((power - E_MIN) / E_SPAN, 0.02, 1);
+      lastPutt = putting;
       var speed, loftDeg;
       if (putting){
-        speed = 0.9 + 11 * p;
+        speed = 0.9 + 16 * p; // full stroke ≈ a 20 yd roll
         loftDeg = 0;
       } else {
         var cl = CLUBS[curClub] || CLUBS.driver;
@@ -878,9 +879,10 @@
         else if (Math.abs(vel.y) > 2){ vel.y = -vel.y*.33; vel.x*=.72; vel.z*=.72; } // bounce
         else {
           vel.y = 0;
-          var fr = onGreenNow() ? .985 : .93; // greens are slick, putts run out
+          // greens are slick; putted balls also roll true on fairway grass
+          var fr = onGreenNow() ? .985 : (lastPutt ? .97 : .93);
           vel.x *= fr; vel.z *= fr;
-          if (vel.length() < (onGreenNow() ? .35 : 1)) endFlight();
+          if (vel.length() < ((onGreenNow() || lastPutt) ? .35 : 1)) endFlight();
         }
       }
       // the cup and the pin are real: slow balls drop in, fast ones clang off the flag
