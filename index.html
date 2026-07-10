@@ -699,7 +699,7 @@
 
     /* ---------- ball physics ---------- */
     var vel = new THREE.Vector3();
-    var flying = false, sunk = false, pinHitSfx = false, lastPutt = false;
+    var flying = false, sunk = false, pinHitSfx = false, lastPutt = false, drowned = false;
     var shotStart = new THREE.Vector3();
 
     // Calibrated from Brecken's swings; nudged down again per feedback.
@@ -733,6 +733,14 @@
         speed = cl.min + (cl.max - cl.min) * Math.pow(p, 1.15);
         loftDeg = cl.loft;
       }
+      // sand lie: the wedge escapes cleanly (muted power); anything else barely moves
+      var sandLie = mode === 'course' && curHole && inRegion(curHole.bunkers, ball.position.x, ball.position.z);
+      if (sandLie){
+        if (putting) speed *= .15;
+        else if (curClub === 'wedge') speed *= .6;
+        else speed *= .25;
+        if (!putting) loftDeg = Math.max(loftDeg, 30); // pop it up out of the sand
+      }
       var loft = loftDeg * Math.PI/180;
       var ar = aimDeg * Math.PI/180;
       var f = baseDir, r = new THREE.Vector3(-f.z, 0, f.x); // forward + right of the target line
@@ -744,9 +752,10 @@
       );
       shotStart.copy(ball.position);
       if (mode === 'course'){ strokes++; preShot.copy(ball.position); }
-      flying = true; sunk = false; pinHitSfx = false;
+      flying = true; sunk = false; pinHitSfx = false; drowned = false;
       sfx(putting ? 'putt' : 'hit');
-      stateMsg.textContent = (putting ? 'Putt' : (CLUBS[curClub]||CLUBS.driver).label) + ': ' +
+      stateMsg.textContent = (putting ? 'Putt' : (CLUBS[curClub]||CLUBS.driver).label) +
+        (sandLie ? ' from the sand' : '') + ': ' +
         Math.round(p*100) + '%  (energy ' + power.toFixed(0) + ')';
       bigMsg.style.display='none';
     }
@@ -783,7 +792,7 @@
 
     function endCourseShot(traveled){
       var bx = ball.position.x, bz = ball.position.z;
-      var inWater = inRegion(curHole.water, bx, bz);
+      var inWater = drowned || inRegion(curHole.water, bx, bz);
       var oob = Math.abs(bx) > 70 || bz > 15 || bz < cupPos.z - 90;
       if (inWater || oob){
         sfx(inWater ? 'splash' : 'ob');
@@ -830,12 +839,17 @@
       placeRig(ball.position, cupPos);
       var toPin = Math.round(toCup / YD);
       var onGreen = toCup < curHole.greenR;
+      var inSandRest = inRegion(curHole.bunkers, bx, bz);
       bigMsg.innerHTML = traveled + ' YARDS<br><span style="font-size:30px">' +
-        (onGreen ? '🟢 on the green — ' : '') + toPin + ' yds to the pin</span>';
+        (inSandRest ? '🏖️ IN THE BUNKER — ' : (onGreen ? '🟢 on the green — ' : '')) +
+        toPin + ' yds to the pin</span>';
       bigMsg.style.display='block';
-      stateMsg.textContent = 'Tap READY on your phone' + (onGreen ? ' — easy does it' : '');
+      stateMsg.textContent = inSandRest
+        ? 'Tap READY — and grab the WEDGE'
+        : 'Tap READY on your phone' + (onGreen ? ' — easy does it' : '');
       updateCourseHud();
-      if (conn) conn.send({ t:'result', yards: traveled, line2: toPin + ' yds to pin' });
+      if (conn) conn.send({ t:'result', yards: traveled,
+        line2: (inSandRest ? 'Bunker! use WDG · ' : '') + toPin + ' yds to pin' });
     }
 
     var last = performance.now();
@@ -871,6 +885,13 @@
       ball.position.addScaledVector(vel, dt);
       if (ball.position.y <= .35){
         ball.position.y = .35;
+        // water grabs the ball the moment it touches down — no skipping across ponds
+        if (mode === 'course' && curHole && inRegion(curHole.water, ball.position.x, ball.position.z)){
+          drowned = true;
+          vel.set(0,0,0);
+          endFlight();
+          return;
+        }
         var inSand = (mode === 'course') && inRegion(curHole.bunkers, ball.position.x, ball.position.z);
         if (inSand){
           vel.y = 0; vel.x *= .5; vel.z *= .5; // sand kills the ball dead
