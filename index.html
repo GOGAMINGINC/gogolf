@@ -53,6 +53,9 @@
   }
   .bigbtn:disabled { background:#3f6f4f; color:#9db9a5; }
   #phoneInstr { font-size:17px; line-height:1.6; color:#eaffea; max-width:340px; }
+  .clubBtn { flex:1; font-size:15px; font-weight:800; padding:14px 0; border:none; border-radius:14px;
+             background:#274d35; color:#9db9a5; }
+  .clubBtn.sel { background:#7CFC00; color:#0b3d1f; }
   #phoneResult { font-size:44px; font-weight:900; color:#7CFC00; min-height:54px; }
   #armState { font-size:28px; font-weight:800; }
   .warn { color:#ffd76e; font-size:14px; max-width:340px; line-height:1.5; }
@@ -101,6 +104,12 @@
   <div id="phoneInstr" style="display:none">
     Hold your phone in both hands like a golf grip, screen facing up, arms down at address.<br><br>
     Tap <b>READY</b>, pause, then swing smoothly.
+  </div>
+  <div id="clubRow" style="display:none; gap:8px; width:100%; max-width:340px;">
+    <button class="clubBtn sel" data-club="driver">DRV</button>
+    <button class="clubBtn" data-club="iron">IRON</button>
+    <button class="clubBtn" data-club="wedge">WDG</button>
+    <button class="clubBtn" data-club="putter">PUTT</button>
   </div>
   <div id="aimRow" style="display:none; align-items:center; gap:16px;">
     <button class="bigbtn" id="btnAimL" style="width:86px">◀</button>
@@ -646,6 +655,10 @@
           swingAnim = { t0: performance.now() - 600, power: msg.power || 25, tDown: null, launched: false };
         }
       }
+      else if (msg.t === 'club'){
+        curClub = msg.v || 'driver';
+        stateMsg.textContent = 'Club: ' + (curClub === 'putter' ? 'Putter' : (CLUBS[curClub]||CLUBS.driver).label);
+      }
       else if (msg.t === 'aim'){
         aimDeg = msg.v || 0;
         aimArrow.rotation.y = -aimDeg * Math.PI/180;
@@ -696,17 +709,30 @@
       var dx = ball.position.x - cupPos.x, dz = ball.position.z - cupPos.z;
       return Math.sqrt(dx*dx + dz*dz) < curHole.greenR;
     }
+    // club bag: same swing, different gearing — makes short distances dialable
+    var CLUBS = {
+      driver: { min: 26,  max: 66, loft: 16, label: 'Driver' }, // up to ~300 yds
+      iron:   { min: 14,  max: 46, loft: 24, label: 'Iron' },   // up to ~180 yds
+      wedge:  { min: 6.5, max: 30, loft: 34, label: 'Wedge' }   // touch shots to ~95 yds
+    };
+    var curClub = 'driver';
     function launch(power){
-      var putting = onGreenNow();
+      var putting = onGreenNow() || curClub === 'putter';
       // putts get their own gentle energy scale so a soft stroke registers
       // and maps to a short roll instead of racing past the cup
       var p = putting
         ? THREE.MathUtils.clamp((power - 5) / 40, 0.02, 1)
         : THREE.MathUtils.clamp((power - E_MIN) / E_SPAN, 0.02, 1);
-      var speed = putting
-        ? 0.9 + 11 * p
-        : (p < 0.25 ? 6 + 30 * (p / 0.25) : 26 + 40 * Math.pow(p, 1.15));
-      var loft = (putting ? 0 : 17) * Math.PI/180;
+      var speed, loftDeg;
+      if (putting){
+        speed = 0.9 + 11 * p;
+        loftDeg = 0;
+      } else {
+        var cl = CLUBS[curClub] || CLUBS.driver;
+        speed = cl.min + (cl.max - cl.min) * Math.pow(p, 1.15);
+        loftDeg = cl.loft;
+      }
+      var loft = loftDeg * Math.PI/180;
       var ar = aimDeg * Math.PI/180;
       var f = baseDir, r = new THREE.Vector3(-f.z, 0, f.x); // forward + right of the target line
       var h = Math.cos(loft) * speed;
@@ -719,7 +745,8 @@
       if (mode === 'course'){ strokes++; preShot.copy(ball.position); }
       flying = true; sunk = false; pinHitSfx = false;
       sfx(putting ? 'putt' : 'hit');
-      stateMsg.textContent = 'Swing power: ' + Math.round(p*100) + '%  (energy ' + power.toFixed(0) + ')';
+      stateMsg.textContent = (putting ? 'Putt' : (CLUBS[curClub]||CLUBS.driver).label) + ': ' +
+        Math.round(p*100) + '%  (energy ' + power.toFixed(0) + ')';
       bigMsg.style.display='none';
     }
 
@@ -937,6 +964,19 @@
     var aimRow = document.getElementById('aimRow');
     var aimVal = document.getElementById('aimVal');
 
+    var myClub = 'driver';
+    var clubBtns = document.querySelectorAll('.clubBtn');
+    function setClub(c){
+      myClub = c;
+      Array.prototype.forEach.call(clubBtns, function(b){
+        b.className = 'clubBtn' + (b.getAttribute('data-club') === c ? ' sel' : '');
+      });
+      if (conn && connected) conn.send({ t:'club', v: c });
+    }
+    Array.prototype.forEach.call(clubBtns, function(b){
+      b.addEventListener('click', function(){ setClub(b.getAttribute('data-club')); });
+    });
+
     var aim = 0;
     function sendAim(){
       aimVal.textContent = 'AIM ' + (aim === 0 ? 'straight' : Math.abs(aim) + '° ' + (aim < 0 ? 'L' : 'R'));
@@ -988,6 +1028,8 @@
           instr.style.display='block';
           btnArm.style.display='block';
           aimRow.style.display='flex';
+          document.getElementById('clubRow').style.display='flex';
+          setClub(myClub); // announce club to the laptop
           status.textContent = 'Sensors live ✔';
         } else {
           status.textContent = 'Motion permission denied — enable in Settings > Safari.';
@@ -1009,8 +1051,8 @@
 
     function startSensors(){
       var lastSend = 0;
-      var theta = 0, refAxis = null, stillFor = 0;
-      resetSwingTrack = function(){ theta = 0; refAxis = null; stillFor = 0; };
+      var theta = 0, refAxis = null, stillFor = 0, thetaPeak = 0;
+      resetSwingTrack = function(){ theta = 0; refAxis = null; stillFor = 0; thetaPeak = 0; };
       addEventListener('devicemotion', function(e){
         var now = performance.now();
         var dt = (e.interval && e.interval > 0) ? (e.interval > 1 ? e.interval/1000 : e.interval) : 1/60;
@@ -1039,27 +1081,35 @@
         if (!acc) return;
         var mag = Math.sqrt((acc.x||0)*(acc.x||0) + (acc.y||0)*(acc.y||0) + (acc.z||0)*(acc.z||0));
         if (!e.acceleration) mag = Math.max(0, mag - 9.81);
-        // short game listens for far gentler motion than a full swing
-        var TH_START = sensitive ? 8 : 18;
-        var TH_MOVE  = sensitive ? 2.5 : 4;
-        var TH_MIN   = sensitive ? 4.5 : 14;
+        // short game (or short clubs) listens for far gentler motion
+        var effSens = sensitive || myClub === 'wedge' || myClub === 'putter';
+        var TH_START = effSens ? 8 : 18;
+        var TH_MOVE  = effSens ? 2.5 : 4;
+        var TH_MIN   = effSens ? 4.5 : 14;
         if (!swinging){
           if (mag > TH_START){
             swinging = true; swingStart = now; impulse = 0; quietSince = 0;
+            thetaPeak = Math.abs(theta);
             conn.send({ t:'swingstart' });
           }
         } else {
-          if (mag > TH_MOVE){ impulse += mag * dt; quietSince = 0; }
+          if (mag > TH_MOVE){
+            impulse += mag * dt; quietSince = 0;
+            thetaPeak = Math.max(thetaPeak, Math.abs(theta));
+          }
           else {
             if (!quietSince) quietSince = now;
             if (now - quietSince > 140){
-              if (impulse >= TH_MIN){
+              // a swing only counts once the club has come back THROUGH the ball:
+              // holding at the top leaves the club angle near its peak, so we wait
+              var swungThrough = Math.abs(theta) < Math.max(15, thetaPeak * .55);
+              if (impulse >= TH_MIN && swungThrough){
                 swinging = false; armed = false;
                 cooldownUntil = now + 1500;
                 conn.send({ t:'swing', power: impulse });
                 armState.textContent = '💥 power ' + Math.min(100, Math.max(2, Math.round((impulse-18)/40*100))) + '%';
                 if (navigator.vibrate) navigator.vibrate(60);
-              } else if (now - swingStart > 3500){
+              } else if (now - swingStart > 6000){
                 swinging = false; impulse = 0;
                 conn.send({ t:'swingcancel' });
                 armState.textContent = '🌫 no swing detected — still armed';
