@@ -1,0 +1,949 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>GOGOLF — Proof of Concept</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.2/peerjs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; background:#0b3d1f; color:#fff; overflow:hidden; }
+  #logo { position:fixed; top:14px; left:18px; z-index:20; font-weight:900; font-size:26px; letter-spacing:1px; }
+  #logo span { color:#7CFC00; }
+  /* ---------- HOST (laptop) ---------- */
+  #hostUI { display:none; }
+  #canvasWrap { position:fixed; inset:0; }
+  #connectPanel {
+    position:fixed; inset:0; z-index:10; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:14px;
+    background:radial-gradient(ellipse at center, #14532d 0%, #0b3d1f 70%);
+  }
+  #qr { background:#fff; padding:14px; border-radius:22px; box-shadow:0 8px 30px rgba(0,0,0,.3); }
+  button { transition: transform .08s ease; }
+  button:active { transform: scale(.96); }
+  #joinCode { font-size:34px; font-weight:800; letter-spacing:6px; color:#7CFC00; }
+  .hint { color:#c9e8c9; font-size:15px; max-width:420px; text-align:center; line-height:1.5; }
+  #hud {
+    position:fixed; top:14px; right:18px; z-index:20; text-align:right;
+    font-size:14px; color:#d8f5d8; background:rgba(0,0,0,.35);
+    padding:12px 16px; border-radius:18px; box-shadow:0 6px 20px rgba(0,0,0,.25);
+  }
+  #bigMsg {
+    position:fixed; left:50%; top:38%; transform:translate(-50%,-50%);
+    font-size:64px; font-weight:900; color:#fff; text-shadow:0 4px 18px rgba(0,0,0,.6);
+    z-index:15; display:none; text-align:center;
+  }
+  #stateMsg {
+    position:fixed; bottom:26px; left:50%; transform:translateX(-50%);
+    font-size:20px; font-weight:600; color:#eaffea; background:rgba(0,0,0,.4);
+    padding:12px 26px; border-radius:30px; z-index:15; box-shadow:0 6px 20px rgba(0,0,0,.25);
+    white-space:nowrap;
+  }
+  /* ---------- PHONE ---------- */
+  #phoneUI { display:none; min-height:100vh; padding:24px; flex-direction:column;
+             align-items:center; justify-content:center; gap:22px; text-align:center;
+             background:radial-gradient(ellipse at center, #14532d 0%, #0b3d1f 70%); }
+  #phoneStatus { font-size:15px; color:#c9e8c9; }
+  .bigbtn {
+    font-size:22px; font-weight:800; padding:20px 34px; border:none; border-radius:26px;
+    box-shadow:0 6px 18px rgba(0,0,0,.25);
+    background:#7CFC00; color:#0b3d1f; width:100%; max-width:340px;
+  }
+  .bigbtn:disabled { background:#3f6f4f; color:#9db9a5; }
+  #phoneInstr { font-size:17px; line-height:1.6; color:#eaffea; max-width:340px; }
+  #phoneResult { font-size:44px; font-weight:900; color:#7CFC00; min-height:54px; }
+  #armState { font-size:28px; font-weight:800; }
+  .warn { color:#ffd76e; font-size:14px; max-width:340px; line-height:1.5; }
+</style>
+</head>
+<body>
+<div id="logo">GO<span>GOLF</span> <small style="font-size:11px;font-weight:400;color:#9fd39f">proof of concept</small></div>
+
+<!-- HOST -->
+<div id="hostUI">
+  <div id="canvasWrap"></div>
+  <div id="connectPanel">
+    <div style="font-size:22px;font-weight:700">Scan with your iPhone camera</div>
+    <div id="qr"></div>
+    <div class="hint">Or open this page on your phone and add <b>?join=CODE</b> to the URL.</div>
+    <div id="joinCode">····</div>
+    <div class="hint" id="hostNetStatus">Starting connection service…</div>
+  </div>
+  <div id="hud">waiting for phone…</div>
+  <div id="settingsPanel" style="display:none;position:fixed;top:60px;left:18px;z-index:30;
+    background:rgba(0,0,0,.78);border-radius:22px;padding:18px 22px;min-width:230px;
+    box-shadow:0 10px 34px rgba(0,0,0,.4);">
+    <div style="font-weight:800;letter-spacing:1px;margin-bottom:12px;">SETTINGS</div>
+    <div style="font-size:13px;color:#9fd39f;margin-bottom:6px;">GoGoGuy</div>
+    <div style="font-size:15px;font-weight:700;margin-bottom:14px;">🏌️ Classic Lime</div>
+    <div style="font-size:13px;color:#9fd39f;margin-bottom:6px;">Game mode</div>
+    <button id="modeBtn" style="width:100%;font-size:15px;font-weight:800;padding:10px 0;border:none;
+      border-radius:10px;background:#7CFC00;color:#0b3d1f;cursor:pointer">MODE: RANGE</button>
+    <div style="font-size:11px;color:#9fd39f;margin-top:10px;">click the GOGOLF logo to close</div>
+  </div>
+  <div id="bigMsg"></div>
+  <div id="stateMsg">Waiting for controller</div>
+</div>
+
+<!-- PHONE -->
+<div id="phoneUI">
+  <div id="phoneStatus">Connecting to laptop…</div>
+  <button class="bigbtn" id="btnMotion" style="display:none">ENABLE MOTION SENSORS</button>
+  <div id="armState"></div>
+  <div id="phoneInstr" style="display:none">
+    Hold your phone in both hands like a golf grip, screen facing up, arms down at address.<br><br>
+    Tap <b>READY</b>, pause, then swing smoothly.
+  </div>
+  <div id="aimRow" style="display:none; align-items:center; gap:16px;">
+    <button class="bigbtn" id="btnAimL" style="width:86px">◀</button>
+    <div id="aimVal" style="font-size:20px;font-weight:800;min-width:120px">AIM straight</div>
+    <button class="bigbtn" id="btnAimR" style="width:86px">▶</button>
+  </div>
+  <button class="bigbtn" id="btnArm" style="display:none">READY — THEN SWING</button>
+  <div id="phoneResult"></div>
+  <div class="warn">⛳ Grip it tight — GOGAMES is not responsible for airborne iPhones.</div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+  // surface any script error on screen so failures aren't silent
+  window.onerror = function(msg){
+    var d = document.createElement('div');
+    d.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:#a00;color:#fff;padding:8px 14px;z-index:99;font-size:13px';
+    d.textContent = 'Error: ' + msg;
+    document.body.appendChild(d);
+  };
+  var params = new URLSearchParams(location.search);
+  var joinCode = params.get('join');
+  if (joinCode) phoneMode(joinCode.toUpperCase()); else hostMode();
+
+  function makeCode(){
+    var chars='ABCDEFGHJKMNPQRSTUVWXYZ23456789', s='';
+    for (var i=0;i<4;i++) s+=chars[Math.floor(Math.random()*chars.length)];
+    return s;
+  }
+
+  /* =========================================================
+     HOST (laptop) — renders the world, receives sensor stream
+     ========================================================= */
+  function hostMode(){
+    document.getElementById('hostUI').style.display='block';
+    var code = makeCode();
+    document.getElementById('joinCode').textContent = code;
+
+    var qrEl = document.getElementById('qr');
+    if (location.protocol === 'file:'){
+      qrEl.parentNode.innerHTML =
+        '<div style="max-width:460px;text-align:center;line-height:1.7;font-size:17px">' +
+        '⚠️ <b>This file is open from your computer, so your phone can\'t reach it.</b><br><br>' +
+        'To play:<br>1. Make a new folder, put this file inside, rename it <b>index.html</b><br>' +
+        '2. Go to <b>drop.netlify.com</b> and drag the folder in<br>' +
+        '3. Open the https link it gives you — the QR will work from there</div>';
+      return;
+    }
+    var joinUrl = new URL(location.href);
+    joinUrl.searchParams.set('join', code);
+    joinUrl.hash='';
+    try {
+      if (typeof QRCode === 'undefined') throw new Error('QR lib missing');
+      new QRCode(qrEl, { text: joinUrl.toString(), width:210, height:210 });
+    } catch(err) {
+      qrEl.innerHTML = '<img width="210" height="210" alt="QR" src="https://api.qrserver.com/v1/create-qr-code/?size=210x210&data=' +
+        encodeURIComponent(joinUrl.toString()) + '">';
+    }
+    var urlLine = document.createElement('div');
+    urlLine.className = 'hint';
+    urlLine.style.wordBreak = 'break-all';
+    urlLine.textContent = joinUrl.toString();
+    qrEl.parentNode.insertBefore(urlLine, qrEl.nextSibling);
+
+    var netStatus = document.getElementById('hostNetStatus');
+    var hud = document.getElementById('hud');
+    var stateMsg = document.getElementById('stateMsg');
+    var bigMsg = document.getElementById('bigMsg');
+    var conn = null;
+
+    var peer = new Peer('gogolf-'+code, { debug:1 });
+    peer.on('open', function(){ netStatus.textContent = 'Ready — waiting for your phone to scan.'; });
+    peer.on('error', function(e){ netStatus.textContent = 'Connection error: '+e.type+' (refresh to retry)'; });
+    peer.on('connection', function(c){
+      conn = c;
+      c.on('open', function(){
+        document.getElementById('connectPanel').style.display='none';
+        stateMsg.textContent = 'Phone connected — tap READY on your phone, then swing';
+      });
+      c.on('data', onData);
+      c.on('close', function(){
+        stateMsg.textContent='Phone disconnected — refresh to restart';
+      });
+    });
+
+    /* ---------- three.js scene ---------- */
+    var YD = 0.9144;
+    var scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x87c8f0);
+    scene.fog = new THREE.Fog(0x87c8f0, 150, 420);
+    var camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, .1, 1200);
+    camera.position.set(0, 3.2, 7.5);
+    var camLook = new THREE.Vector3(0, 1.4, -20);
+    var renderer = new THREE.WebGLRenderer({ antialias:true });
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+    document.getElementById('canvasWrap').appendChild(renderer.domElement);
+    addEventListener('resize', function(){
+      camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
+
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x3a7d44, 1.0));
+    var sun = new THREE.DirectionalLight(0xfff5e0, .9);
+    sun.position.set(30,60,20); scene.add(sun);
+
+    // ground (rough) — big enough for the par 5
+    var ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(700, 1100),
+      new THREE.MeshLambertMaterial({ color:0x3e9b4f })
+    );
+    ground.rotation.x = -Math.PI/2; ground.position.z = -350; scene.add(ground);
+
+    /* ---------- range furniture (range + flags modes) ---------- */
+    var rangeGroup = new THREE.Group();
+    var teeBox = new THREE.Mesh(new THREE.PlaneGeometry(8,8),
+      new THREE.MeshLambertMaterial({ color:0x2f7f3f }));
+    teeBox.rotation.x = -Math.PI/2; teeBox.position.y=.01; rangeGroup.add(teeBox);
+    function sign(yards){
+      var cv = document.createElement('canvas'); cv.width=256; cv.height=128;
+      var g = cv.getContext('2d');
+      g.fillStyle='#ffffff'; g.fillRect(0,0,256,128);
+      g.fillStyle='#0b3d1f'; g.font='bold 72px sans-serif';
+      g.textAlign='center'; g.textBaseline='middle'; g.fillText(yards, 128, 64);
+      var m = new THREE.Mesh(new THREE.PlaneGeometry(6,3),
+        new THREE.MeshBasicMaterial({ map:new THREE.CanvasTexture(cv) }));
+      m.position.set(-10, 1.6, -yards*YD); rangeGroup.add(m);
+      var post = new THREE.Mesh(new THREE.CylinderGeometry(.08,.08,1.6),
+        new THREE.MeshLambertMaterial({ color:0x8b5a2b }));
+      post.position.set(-10,.8,-yards*YD); rangeGroup.add(post);
+    }
+    [50,100,150,200,250,300].forEach(sign);
+    scene.add(rangeGroup);
+
+    /* ---------- flags target game (flags mode) ---------- */
+    var flagsGroup = new THREE.Group();
+    var flags = [
+      { yd:  75, x: -6 },
+      { yd: 120, x:  8 },
+      { yd: 165, x: -3 },
+      { yd: 210, x: 10 },
+      { yd: 260, x:  0 }
+    ];
+    function makeFlagPole(color){
+      var g = new THREE.Group();
+      var pole = new THREE.Mesh(new THREE.CylinderGeometry(.06,.06,4.2,8),
+        new THREE.MeshLambertMaterial({ color:0xeeeeee }));
+      pole.position.y = 2.1; g.add(pole);
+      var flagM = new THREE.Mesh(new THREE.PlaneGeometry(1.6,.9),
+        new THREE.MeshBasicMaterial({ color:color, side:THREE.DoubleSide }));
+      flagM.position.set(.8, 3.7, 0); g.add(flagM);
+      return g;
+    }
+    flags.forEach(function(fl){
+      var g = makeFlagPole(0xff4444);
+      [2.75, 7.3].forEach(function(r, i){
+        var ring = new THREE.Mesh(new THREE.RingGeometry(r-.18, r, 40),
+          new THREE.MeshBasicMaterial({ color: i===0 ? 0xffffff : 0xffe066,
+            transparent:true, opacity:.55, side:THREE.DoubleSide }));
+        ring.rotation.x = -Math.PI/2; ring.position.y = .03; g.add(ring);
+      });
+      g.position.set(fl.x, 0, -fl.yd*YD);
+      flagsGroup.add(g);
+      fl.pos = new THREE.Vector3(fl.x, 0, -fl.yd*YD);
+    });
+    flagsGroup.visible = false;
+    scene.add(flagsGroup);
+    var score = 0, shots = 0;
+
+    /* ---------- COURSE ONE (course mode) ---------- */
+    // Three holes. All shapes are axis-aligned ellipses {x, z, rx, rz}.
+    var courseData = [
+      { par: 3, name: 'The Opener',
+        cup: { x: 5, z: -137 },                       // ~150 yds
+        greenR: 10,
+        fairways: [ { x: 2, z: -75, rx: 13, rz: 58 } ],
+        bunkers:  [ { x: 15, z: -132, rx: 5, rz: 4 }, { x: -5, z: -146, rx: 4, rz: 3 } ],
+        water:    [] },
+      { par: 4, name: 'Pond Life',
+        cup: { x: 30, z: -300 },                      // ~330 yds
+        greenR: 10,
+        fairways: [ { x: 5, z: -95, rx: 14, rz: 62 }, { x: 20, z: -215, rx: 15, rz: 75 } ],
+        bunkers:  [ { x: 21, z: -292, rx: 5, rz: 4 } ],
+        water:    [ { x: 8, z: -152, rx: 17, rz: 13 } ] },
+      { par: 5, name: 'The Long Walk',
+        cup: { x: -15, z: -430 },                     // ~470 yds
+        greenR: 11,
+        fairways: [ { x: 0, z: -105, rx: 14, rz: 72 }, { x: -8, z: -265, rx: 13, rz: 82 },
+                    { x: -13, z: -382, rx: 12, rz: 52 } ],
+        bunkers:  [ { x: -2, z: -420, rx: 5, rz: 4 }, { x: -28, z: -432, rx: 4, rz: 4 } ],
+        water:    [ { x: 26, z: -230, rx: 20, rz: 72 } ] }
+    ];
+    var courseGroup = new THREE.Group();
+    courseGroup.visible = false;
+    scene.add(courseGroup);
+    var holeIdx = 0, strokes = 0, totalStrokes = 0, holesDone = 0, roundOver = false;
+    var cupPos = new THREE.Vector3();
+    var curHole = null;
+    var preShot = new THREE.Vector3();
+
+    function ellipseMesh(e, color, y, opacity){
+      var m = new THREE.Mesh(new THREE.CircleGeometry(1, 36),
+        new THREE.MeshLambertMaterial({ color:color, transparent:(opacity<1), opacity:opacity }));
+      m.rotation.x = -Math.PI/2;
+      m.scale.set(e.rx, e.rz, 1);
+      m.position.set(e.x, y, e.z);
+      return m;
+    }
+    function inRegion(list, x, z){
+      for (var i=0;i<list.length;i++){
+        var e = list[i];
+        var dx = (x-e.x)/e.rx, dz = (z-e.z)/e.rz;
+        if (dx*dx + dz*dz < 1) return true;
+      }
+      return false;
+    }
+    function buildHole(i){
+      while (courseGroup.children.length) courseGroup.remove(courseGroup.children[0]);
+      curHole = courseData[i];
+      cupPos.set(curHole.cup.x, 0, curHole.cup.z);
+      // tee pad
+      var pad = new THREE.Mesh(new THREE.PlaneGeometry(7,7),
+        new THREE.MeshLambertMaterial({ color:0x2f7f3f }));
+      pad.rotation.x = -Math.PI/2; pad.position.y = .012; courseGroup.add(pad);
+      curHole.fairways.forEach(function(e){ courseGroup.add(ellipseMesh(e, 0x4cae54, .01, 1)); });
+      // green
+      courseGroup.add(ellipseMesh({ x:curHole.cup.x, z:curHole.cup.z, rx:curHole.greenR, rz:curHole.greenR }, 0x6fd07a, .02, 1));
+      curHole.bunkers.forEach(function(e){ courseGroup.add(ellipseMesh(e, 0xd9c07a, .025, 1)); });
+      curHole.water.forEach(function(e){ courseGroup.add(ellipseMesh(e, 0x3a7bd5, .025, 1)); });
+      // cup + pin
+      var cup = new THREE.Mesh(new THREE.CylinderGeometry(.35,.35,.08,16),
+        new THREE.MeshLambertMaterial({ color:0x111111 }));
+      cup.position.set(cupPos.x, .04, cupPos.z); courseGroup.add(cup);
+      var pin = makeFlagPole(0xffe066);
+      pin.position.set(cupPos.x, 0, cupPos.z); courseGroup.add(pin);
+      strokes = 0;
+      ball.position.copy(BALL_HOME);
+      placeRig(ball.position, cupPos);
+      var toPin = Math.round(ball.position.distanceTo(cupPos)/YD);
+      stateMsg.textContent = 'Hole ' + (i+1) + ' "' + curHole.name + '" · Par ' + curHole.par + ' · ' + toPin + ' yds — tap READY';
+      updateCourseHud();
+    }
+    function relScoreText(n){
+      return n === 0 ? 'E' : (n > 0 ? '+' + n : '' + n);
+    }
+    function parName(rel){
+      if (rel <= -3) return 'ALBATROSS!! 🤯';
+      if (rel === -2) return 'EAGLE! 🦅';
+      if (rel === -1) return 'BIRDIE! 🐦';
+      if (rel === 0)  return 'PAR ✅';
+      if (rel === 1)  return 'BOGEY';
+      if (rel === 2)  return 'DOUBLE BOGEY';
+      return '+' + rel + ' … rough one';
+    }
+    function coursePar(n){ // par for first n holes
+      var p = 0;
+      for (var i=0;i<n;i++) p += courseData[i].par;
+      return p;
+    }
+    function updateCourseHud(){
+      if (mode !== 'course') return;
+      var toPin = Math.round(ball.position.distanceTo(cupPos)/YD);
+      var rel = totalStrokes - coursePar(holesDone);
+      hud.innerHTML = 'HOLE ' + (holeIdx+1) + '/3 · PAR ' + curHole.par +
+        '<br>strokes: ' + strokes + ' · ' + toPin + ' yds to pin' +
+        '<br>round: ' + (holesDone ? totalStrokes + ' (' + relScoreText(rel) + ')' : '—');
+    }
+
+    /* ---------- the player rig: GoGoGuy + club + aim arrow ---------- */
+    var BALL_HOME = new THREE.Vector3(0.9, .35, -1.2);
+    var baseDir = new THREE.Vector3(0, 0, -1); // direction to target from the ball
+    var rig = new THREE.Group();
+    scene.add(rig);
+
+    var ball = new THREE.Mesh(new THREE.SphereGeometry(.35, 20, 20),
+      new THREE.MeshLambertMaterial({ color:0xffffff }));
+    ball.position.copy(BALL_HOME); scene.add(ball);
+
+    // aim arrow on the ground, pivoting around the ball (rig-local)
+    var aimArrow = new THREE.Group();
+    var shaftA = new THREE.Mesh(new THREE.PlaneGeometry(.25, 10),
+      new THREE.MeshBasicMaterial({ color:0xffffff, transparent:true, opacity:.45 }));
+    shaftA.rotation.x = -Math.PI/2; shaftA.position.set(0, .02, -6); aimArrow.add(shaftA);
+    var tipA = new THREE.Mesh(new THREE.CircleGeometry(.55, 3),
+      new THREE.MeshBasicMaterial({ color:0xffffff, transparent:true, opacity:.55 }));
+    tipA.rotation.x = -Math.PI/2; tipA.rotation.z = Math.PI/2;
+    tipA.position.set(0, .02, -11.3); aimArrow.add(tipA);
+    aimArrow.position.set(BALL_HOME.x, 0, BALL_HOME.z);
+    rig.add(aimArrow);
+
+    // ---- the GOGOGUY: rounded, friendly, dressed in GOGAMES lime ----
+    var avatar = new THREE.Group();
+    var skinMat = new THREE.MeshLambertMaterial({ color:0xf2c9a0 });
+    var shirtMat = new THREE.MeshLambertMaterial({ color:0x7CFC00 });
+    [-.18, .18].forEach(function(lx){
+      var leg = new THREE.Mesh(new THREE.CylinderGeometry(.11,.13,.85,14),
+        new THREE.MeshLambertMaterial({ color:0x333a4d }));
+      leg.position.set(lx, .48, 0); avatar.add(leg);
+      var shoe = new THREE.Mesh(new THREE.SphereGeometry(.15,14,14),
+        new THREE.MeshLambertMaterial({ color:0xffffff }));
+      shoe.scale.set(1,.55,1.5); shoe.position.set(lx,.09,-.06); avatar.add(shoe);
+    });
+    var torso = new THREE.Mesh(new THREE.SphereGeometry(.42,20,20), shirtMat);
+    torso.scale.set(1,1.45,.8); torso.position.y = 1.32; avatar.add(torso);
+    var armL = new THREE.Mesh(new THREE.CylinderGeometry(.075,.075,.62,12), shirtMat);
+    armL.position.set(-.24, 1.5, -.26); armL.rotation.x = .62; armL.rotation.z = .35; avatar.add(armL);
+    var armR = new THREE.Mesh(new THREE.CylinderGeometry(.075,.075,.62,12), shirtMat);
+    armR.position.set(.24, 1.5, -.26); armR.rotation.x = .62; armR.rotation.z = -.35; avatar.add(armR);
+    var hands = new THREE.Mesh(new THREE.SphereGeometry(.10,12,12), skinMat);
+    hands.position.set(0, 1.32, -.5); avatar.add(hands);
+    var head = new THREE.Mesh(new THREE.SphereGeometry(.27,20,20), skinMat);
+    head.position.y = 2.15; avatar.add(head);
+    [-.09, .09].forEach(function(ex){
+      var eye = new THREE.Mesh(new THREE.SphereGeometry(.032,8,8),
+        new THREE.MeshLambertMaterial({ color:0x222222 }));
+      eye.position.set(ex, 2.19, -.24); avatar.add(eye);
+    });
+    var cap = new THREE.Mesh(new THREE.SphereGeometry(.29,18,18, 0, Math.PI*2, 0, Math.PI/2),
+      new THREE.MeshLambertMaterial({ color:0xff4444 }));
+    cap.position.y = 2.2; avatar.add(cap);
+    var brim = new THREE.Mesh(new THREE.BoxGeometry(.42,.05,.3),
+      new THREE.MeshLambertMaterial({ color:0xff4444 }));
+    brim.position.set(0, 2.3, -.33); avatar.add(brim);
+
+    // club, pivoted at his hands
+    var clubPivot = new THREE.Group();
+    var shaft = new THREE.Mesh(new THREE.CylinderGeometry(.035,.035,1.15,10),
+      new THREE.MeshLambertMaterial({ color:0xcccccc }));
+    shaft.position.y = -.575; clubPivot.add(shaft);
+    var headC = new THREE.Mesh(new THREE.BoxGeometry(.16,.12,.3),
+      new THREE.MeshLambertMaterial({ color:0x666666 }));
+    headC.position.set(0,-1.18,.08); clubPivot.add(headC);
+    clubPivot.position.set(.5, 1.35, -1.2);
+    rig.add(clubPivot);
+    avatar.position.set(0, 0, -1.2);
+    avatar.rotation.y = -Math.PI/2; // proper golf address: side-on, facing the ball
+    rig.add(avatar);
+
+    // place the rig + camera so the player addresses ballPos aiming at target
+    function placeRig(ballPos, target){
+      var dir = new THREE.Vector3().subVectors(target, ballPos);
+      dir.y = 0;
+      if (dir.lengthSq() < .01) dir.set(0,0,-1);
+      dir.normalize();
+      baseDir.copy(dir);
+      var yaw = Math.atan2(-dir.x, -dir.z);
+      rig.rotation.y = yaw;
+      var off = new THREE.Vector3(BALL_HOME.x, 0, BALL_HOME.z);
+      off.applyAxisAngle(new THREE.Vector3(0,1,0), yaw);
+      rig.position.set(ballPos.x - off.x, 0, ballPos.z - off.z);
+      camera.position.set(ballPos.x - dir.x*8, 3.4, ballPos.z - dir.z*8);
+      camLook.set(ballPos.x + dir.x*30, 1.2, ballPos.z + dir.z*30);
+      // short game? tell the phone to listen for much gentler strokes
+      if (conn) conn.send({ t:'ctx', sg: mode === 'course' && ballPos.distanceTo(target) < 41 });
+    }
+    function placeRigDefault(){
+      if (conn) conn.send({ t:'ctx', sg: false });
+      baseDir.set(0,0,-1);
+      rig.rotation.y = 0;
+      rig.position.set(0,0,0);
+      camera.position.set(0, 3.2, 7.5);
+      camLook.set(0, 1.4, -20);
+    }
+
+    /* ---------- settings + modes ---------- */
+    var settingsPanel = document.getElementById('settingsPanel');
+    var logoEl = document.getElementById('logo');
+    logoEl.style.cursor = 'pointer';
+    logoEl.title = 'Settings';
+    logoEl.addEventListener('click', function(){
+      settingsPanel.style.display = (settingsPanel.style.display === 'none') ? 'block' : 'none';
+    });
+
+    var mode = 'range';
+    var modeBtn = document.getElementById('modeBtn');
+    function setMode(m){
+      mode = m;
+      flagsGroup.visible = (m === 'flags');
+      courseGroup.visible = (m === 'course');
+      rangeGroup.visible = (m !== 'course');
+      modeBtn.textContent = 'MODE: ' + m.toUpperCase();
+      bigMsg.style.display = 'none';
+      flying = false; vel.set(0,0,0);
+      if (m === 'flags'){ score = 0; shots = 0; }
+      if (m === 'course'){
+        holeIdx = 0; totalStrokes = 0; holesDone = 0; roundOver = false;
+        buildHole(0);
+      } else {
+        ball.position.copy(BALL_HOME);
+        placeRigDefault();
+        stateMsg.textContent = (m === 'flags')
+          ? 'Flags mode — closest to the pin scores points!'
+          : 'Range mode — swing away';
+        hud.innerHTML = 'connected';
+      }
+    }
+    modeBtn.addEventListener('click', function(){
+      setMode(mode === 'range' ? 'flags' : (mode === 'flags' ? 'course' : 'range'));
+    });
+
+    /* ---------- controller state ---------- */
+    var armed = false;
+    var swingAnim = null; // {t0, power, tDown, launched} — scripted swing in progress
+    var clubA = 0;        // smoothed club angle
+    var aimDeg = 0;       // aim relative to the target line: negative = left
+
+    function onData(msg){
+      if (!msg || !msg.t) return;
+      if (msg.t === 'orient'){
+        if (mode === 'course') updateCourseHud();
+        else hud.innerHTML = (mode === 'flags' ? 'SCORE ' + score + ' · shots ' + shots + '<br>' : '') +
+          (armed ? '<b style="color:#7CFC00">ARMED</b>' : 'connected');
+      }
+      else if (msg.t === 'arm'){
+        armed = true;
+        resetForShot();
+      }
+      else if (msg.t === 'swingstart'){
+        swingAnim = { t0: performance.now(), power: null, tDown: null, launched: false };
+        stateMsg.textContent = 'Swinging…';
+      }
+      else if (msg.t === 'swingcancel'){
+        swingAnim = null;
+        stateMsg.textContent = 'Too soft — still armed, swing again!';
+      }
+      else if (msg.t === 'swing'){
+        armed = false;
+        if (swingAnim && swingAnim.tDown === null){
+          swingAnim.power = msg.power || 25;
+        } else {
+          swingAnim = { t0: performance.now() - 600, power: msg.power || 25, tDown: null, launched: false };
+        }
+      }
+      else if (msg.t === 'aim'){
+        aimDeg = msg.v || 0;
+        aimArrow.rotation.y = -aimDeg * Math.PI/180;
+        stateMsg.textContent = 'Aim: ' + (aimDeg === 0 ? 'straight' : Math.abs(aimDeg) + '° ' + (aimDeg < 0 ? 'left' : 'right'));
+      }
+      else if (msg.t === 'reset'){ resetForShot(); }
+    }
+    // hook for automated testing from the console
+    window._gg = {
+      onData: onData,
+      state: function(){ return { mode: mode, holeIdx: holeIdx, strokes: strokes,
+        totalStrokes: totalStrokes, holesDone: holesDone, roundOver: roundOver,
+        ball: { x:+ball.position.x.toFixed(1), y:+ball.position.y.toFixed(1), z:+ball.position.z.toFixed(1) },
+        flying: flying, toPin: mode==='course' ? +(ball.position.distanceTo(cupPos)/YD).toFixed(1) : null }; },
+      setMode: setMode
+    };
+
+    function resetForShot(){
+      bigMsg.style.display = 'none';
+      vel.set(0,0,0); flying = false;
+      if (mode === 'course'){
+        if (roundOver){ // fresh round
+          holeIdx = 0; totalStrokes = 0; holesDone = 0; roundOver = false;
+          buildHole(0);
+        }
+        placeRig(ball.position, cupPos);
+        var toPin = Math.round(ball.position.distanceTo(cupPos)/YD);
+        stateMsg.textContent = onGreenNow()
+          ? '⛳ Putting · ' + toPin + ' yds — nice and smooth!'
+          : 'Hole ' + (holeIdx+1) + ' · ' + toPin + ' yds to pin — swing when ready!';
+        updateCourseHud();
+      } else {
+        ball.position.copy(BALL_HOME);
+        placeRigDefault();
+        stateMsg.textContent = 'Addressed. Swing when ready!';
+      }
+    }
+
+    /* ---------- ball physics ---------- */
+    var vel = new THREE.Vector3();
+    var flying = false, sunk = false;
+    var shotStart = new THREE.Vector3();
+
+    // Calibrated from Brecken's swings; nudged down again per feedback.
+    var E_MIN = 18, E_SPAN = 40;
+    function onGreenNow(){
+      if (mode !== 'course' || !curHole) return false;
+      var dx = ball.position.x - cupPos.x, dz = ball.position.z - cupPos.z;
+      return Math.sqrt(dx*dx + dz*dz) < curHole.greenR;
+    }
+    function launch(power){
+      var putting = onGreenNow();
+      // putts get their own gentle energy scale so a soft stroke registers
+      // and maps to a short roll instead of racing past the cup
+      var p = putting
+        ? THREE.MathUtils.clamp((power - 5) / 40, 0.02, 1)
+        : THREE.MathUtils.clamp((power - E_MIN) / E_SPAN, 0.02, 1);
+      var speed = putting
+        ? 0.9 + 11 * p
+        : (p < 0.25 ? 6 + 30 * (p / 0.25) : 26 + 40 * Math.pow(p, 1.15));
+      var loft = (putting ? 0 : 17) * Math.PI/180;
+      var ar = aimDeg * Math.PI/180;
+      var f = baseDir, r = new THREE.Vector3(-f.z, 0, f.x); // forward + right of the target line
+      var h = Math.cos(loft) * speed;
+      vel.set(
+        (f.x*Math.cos(ar) + r.x*Math.sin(ar)) * h + (Math.random()-.5)*speed*.04,
+        Math.sin(loft)*speed,
+        (f.z*Math.cos(ar) + r.z*Math.sin(ar)) * h
+      );
+      shotStart.copy(ball.position);
+      if (mode === 'course'){ strokes++; preShot.copy(ball.position); }
+      flying = true; sunk = false;
+      stateMsg.textContent = 'Swing power: ' + Math.round(p*100) + '%  (energy ' + power.toFixed(0) + ')';
+      bigMsg.style.display='none';
+    }
+
+    function endFlight(){
+      flying = false;
+      var traveled = Math.round(horizDist(shotStart, ball.position) / YD);
+      if (mode === 'course'){ endCourseShot(traveled); return; }
+      if (mode === 'flags'){
+        var best = null, bestD = 1e9;
+        flags.forEach(function(fl){
+          var d = Math.sqrt(Math.pow(ball.position.x - fl.pos.x, 2) + Math.pow(ball.position.z - fl.pos.z, 2));
+          if (d < bestD){ bestD = d; best = fl; }
+        });
+        var dYd = bestD / YD;
+        var pts = dYd < 3 ? 50 : dYd < 8 ? 25 : dYd < 15 ? 10 : dYd < 25 ? 5 : 0;
+        shots++; score += pts;
+        bigMsg.innerHTML = traveled + ' YARDS<br><span style="font-size:32px">' +
+          (pts ? '+' + pts + ' pts! ' : '') + dYd.toFixed(0) + ' yds from the ' + best.yd + ' flag</span>' +
+          '<br><span style="font-size:26px;color:#eaffea">score: ' + score + ' (' + shots + ' shots)</span>';
+        if (conn) conn.send({ t:'result', yards: traveled, pts: pts, score: score });
+      } else {
+        bigMsg.textContent = traveled + ' YARDS';
+        if (conn) conn.send({ t:'result', yards: traveled });
+      }
+      bigMsg.style.display='block';
+      stateMsg.textContent = 'Tap READY on your phone to hit another';
+    }
+
+    function horizDist(a, b){
+      var dx = a.x-b.x, dz = a.z-b.z;
+      return Math.sqrt(dx*dx + dz*dz);
+    }
+
+    function endCourseShot(traveled){
+      var bx = ball.position.x, bz = ball.position.z;
+      var inWater = inRegion(curHole.water, bx, bz);
+      var oob = Math.abs(bx) > 70 || bz > 15 || bz < cupPos.z - 90;
+      if (inWater || oob){
+        strokes++; // penalty stroke
+        ball.position.copy(preShot);
+        placeRig(ball.position, cupPos);
+        bigMsg.innerHTML = (inWater ? '💦 SPLASH!' : '🌲 OUT OF BOUNDS!') +
+          '<br><span style="font-size:30px">+1 penalty — replay from your last spot</span>';
+        bigMsg.style.display='block';
+        stateMsg.textContent = 'Tap READY on your phone';
+        updateCourseHud();
+        if (conn) conn.send({ t:'result', yards: traveled, line2: (inWater?'Splash! ':'OB! ') + '+1 penalty' });
+        return;
+      }
+      var toCup = ball.position.distanceTo(cupPos);
+      if (sunk || toCup < 1.2){
+        // in the cup, or a tap-in
+        var rel = strokes - curHole.par;
+        totalStrokes += strokes;
+        holesDone = holeIdx + 1;
+        var relTotal = totalStrokes - coursePar(holesDone);
+        if (holeIdx >= courseData.length - 1){
+          roundOver = true;
+          bigMsg.innerHTML = parName(rel) + '<br><span style="font-size:36px">🏆 ROUND COMPLETE</span>' +
+            '<br><span style="font-size:30px;color:#eaffea">' + totalStrokes + ' strokes (' + relScoreText(relTotal) + ')</span>' +
+            '<br><span style="font-size:20px;color:#c9e8c9">tap READY to play again</span>';
+          stateMsg.textContent = 'Round over — tap READY for a new round';
+          if (conn) conn.send({ t:'result', yards: traveled, line2: 'Round: ' + totalStrokes + ' (' + relScoreText(relTotal) + ')' });
+        } else {
+          bigMsg.innerHTML = parName(rel) +
+            '<br><span style="font-size:30px;color:#eaffea">' + strokes + ' strokes · round ' + relScoreText(relTotal) + '</span>';
+          if (conn) conn.send({ t:'result', yards: traveled, line2: parName(rel) });
+          holeIdx++;
+          setTimeout(function(){
+            if (mode === 'course' && !roundOver) buildHole(holeIdx);
+          }, 2600);
+        }
+        bigMsg.style.display='block';
+        return;
+      }
+      // ball in play — walk to it
+      placeRig(ball.position, cupPos);
+      var toPin = Math.round(toCup / YD);
+      var onGreen = toCup < curHole.greenR;
+      bigMsg.innerHTML = traveled + ' YARDS<br><span style="font-size:30px">' +
+        (onGreen ? '🟢 on the green — ' : '') + toPin + ' yds to the pin</span>';
+      bigMsg.style.display='block';
+      stateMsg.textContent = 'Tap READY on your phone' + (onGreen ? ' — easy does it' : '');
+      updateCourseHud();
+      if (conn) conn.send({ t:'result', yards: traveled, line2: toPin + ' yds to pin' });
+    }
+
+    var last = performance.now();
+    // keep the game running even when the tab is hidden: rAF freezes and
+    // main-thread timers get heavily throttled, but worker timers do not,
+    // so a tiny worker acts as the game clock whenever we're in the background
+    var clockWorker = null;
+    try {
+      var wBlob = new Blob(['setInterval(function(){ postMessage(0); }, 33);'], { type:'text/javascript' });
+      clockWorker = new Worker(URL.createObjectURL(wBlob));
+      clockWorker.onmessage = function(){ if (document.hidden) tick(performance.now()); };
+    } catch(e){ /* fall back to rAF only */ }
+    var rafPending = false;
+    function schedule(){
+      if (!document.hidden && !rafPending){
+        rafPending = true;
+        requestAnimationFrame(function(n){ rafPending = false; tick(n); });
+      }
+      // hidden: the worker clock drives ticks instead
+    }
+    document.addEventListener('visibilitychange', function(){
+      if (!document.hidden){ last = performance.now(); schedule(); }
+    });
+    // physics for one small step
+    function stepPhysics(dt){
+      vel.y -= 9.81*dt;
+      vel.multiplyScalar(1 - 0.015*dt*60*0.02); // light drag
+      ball.position.addScaledVector(vel, dt);
+      if (ball.position.y <= .35){
+        ball.position.y = .35;
+        var inSand = (mode === 'course') && inRegion(curHole.bunkers, ball.position.x, ball.position.z);
+        if (inSand){
+          vel.y = 0; vel.x *= .5; vel.z *= .5; // sand kills the ball dead
+          if (vel.length() < 1.5) endFlight();
+        }
+        else if (Math.abs(vel.y) > 2){ vel.y = -vel.y*.33; vel.x*=.72; vel.z*=.72; } // bounce
+        else {
+          vel.y = 0;
+          var fr = onGreenNow() ? .985 : .93; // greens are slick, putts run out
+          vel.x *= fr; vel.z *= fr;
+          if (vel.length() < (onGreenNow() ? .35 : 1)) endFlight();
+        }
+      }
+      // the cup and the pin are real: slow balls drop in, fast ones clang off the flag
+      if (mode === 'course' && flying && ball.position.y <= .55){
+        var dxc = ball.position.x - cupPos.x, dzc = ball.position.z - cupPos.z;
+        var dc = Math.sqrt(dxc*dxc + dzc*dzc);
+        var sp = vel.length();
+        if (dc < .5 && sp < 2.2){
+          sunk = true; // slow enough to drop
+          ball.position.set(cupPos.x, .35, cupPos.z);
+          vel.set(0,0,0);
+          endFlight();
+        } else if (dc < .45 && sp >= 2.2){
+          vel.x *= -.35; vel.z *= -.35; // too hot — rattles the pin and stays out
+        }
+      }
+    }
+    function tick(now){
+      schedule();
+      var dt = Math.min((now-last)/1000, 2); last = now;
+
+      // swing animation, synced to the real swing
+      var a = 0;
+      if (swingAnim){
+        var BACK = .55;
+        var ts = (now - swingAnim.t0) / 1000;
+        if (ts < BACK){ var f1 = ts/BACK; a = -2.3 * (f1*f1*(3-2*f1)); }
+        else if (swingAnim.tDown === null){
+          a = -2.3;
+          if (swingAnim.power !== null) swingAnim.tDown = now;
+          else if (ts > 4) swingAnim = null;
+        }
+        if (swingAnim && swingAnim.tDown !== null){
+          var td = (now - swingAnim.tDown) / 1000;
+          var DOWN = .20, HOLD = 1.0, RET = 1.6;
+          if (td < DOWN){ var f2 = td/DOWN; a = -2.3 + 4.7*f2*f2; }
+          else if (td < HOLD){ a = 2.4; }
+          else if (td < RET){ var f3 = (td-HOLD)/(RET-HOLD); a = 2.4*(1-(f3*f3*(3-2*f3))); }
+          else { swingAnim = null; a = 0; }
+          if (swingAnim && !swingAnim.launched && td >= DOWN*.7){
+            swingAnim.launched = true;
+            launch(swingAnim.power);
+          }
+        }
+      }
+      clubA += (a - clubA) * Math.min(1, dt*14);
+      clubPivot.rotation.x = clubA;
+      clubPivot.rotation.z = .32 + clubA * .22; // leans out to the ball at address
+
+      if (flying){
+        // substep so the simulation keeps up with real time even if frames
+        // are slow or the tab is throttled in the background
+        var rem = dt;
+        while (rem > 0 && flying){
+          var sub = Math.min(rem, .033);
+          stepPhysics(sub);
+          rem -= sub;
+        }
+        camera.lookAt(ball.position.x, Math.max(ball.position.y,1), ball.position.z);
+      } else {
+        camera.lookAt(camLook);
+      }
+      if (!document.hidden) renderer.render(scene, camera);
+    }
+    schedule();
+  }
+
+  /* =========================================================
+     PHONE — streams orientation, detects the swing
+     ========================================================= */
+  function phoneMode(code){
+    var ui = document.getElementById('phoneUI');
+    ui.style.display='flex';
+    var status = document.getElementById('phoneStatus');
+    var btnMotion = document.getElementById('btnMotion');
+    var btnArm = document.getElementById('btnArm');
+    var instr = document.getElementById('phoneInstr');
+    var result = document.getElementById('phoneResult');
+    var armState = document.getElementById('armState');
+    var aimRow = document.getElementById('aimRow');
+    var aimVal = document.getElementById('aimVal');
+
+    var aim = 0;
+    function sendAim(){
+      aimVal.textContent = 'AIM ' + (aim === 0 ? 'straight' : Math.abs(aim) + '° ' + (aim < 0 ? 'L' : 'R'));
+      if (conn && connected) conn.send({ t:'aim', v: aim });
+    }
+    document.getElementById('btnAimL').addEventListener('click', function(){ aim = Math.max(-30, aim - 3); sendAim(); });
+    document.getElementById('btnAimR').addEventListener('click', function(){ aim = Math.min(30, aim + 3); sendAim(); });
+
+    var conn = null, connected = false;
+    var peer = new Peer({ debug:1 });
+    peer.on('open', function(){
+      conn = peer.connect('gogolf-'+code, { reliable:true });
+      conn.on('open', function(){
+        connected = true;
+        status.textContent = 'Connected to laptop ✔';
+        btnMotion.style.display='block';
+      });
+      conn.on('data', function(msg){
+        if (msg && msg.t==='ctx'){
+          sensitive = !!msg.sg; // short game: listen for gentle strokes
+          if (armed) armState.textContent = sensitive ? '🟢 ARMED — soft touch!' : '🟢 ARMED — swing!';
+        }
+        if (msg && msg.t==='result'){
+          result.innerHTML = msg.yards + ' yds' + (msg.pts ? ' · <span style="color:#7CFC00">+' + msg.pts + '</span>' : '') +
+            (msg.score !== undefined ? '<br><span style="font-size:18px;color:#c9e8c9">score ' + msg.score + '</span>' : '') +
+            (msg.line2 ? '<br><span style="font-size:18px;color:#c9e8c9">' + msg.line2 + '</span>' : '');
+          armState.textContent = '';
+          btnArm.disabled = false;
+          if (navigator.vibrate) navigator.vibrate(120);
+        }
+      });
+      conn.on('close', function(){ status.textContent='Disconnected — refresh both devices.'; connected=false; });
+    });
+    peer.on('error', function(e){
+      status.textContent = 'Could not connect ('+e.type+'). Check the code and refresh.';
+    });
+
+    var motionOK = false;
+    btnMotion.addEventListener('click', function(){
+      var asks = [];
+      if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function')
+        asks.push(DeviceMotionEvent.requestPermission());
+      if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function')
+        asks.push(DeviceOrientationEvent.requestPermission());
+      Promise.all(asks.length ? asks : [Promise.resolve('granted')]).then(function(res){
+        if (res.every(function(r){ return r==='granted'; })){
+          motionOK = true; startSensors();
+          btnMotion.style.display='none';
+          instr.style.display='block';
+          btnArm.style.display='block';
+          aimRow.style.display='flex';
+          status.textContent = 'Sensors live ✔';
+        } else {
+          status.textContent = 'Motion permission denied — enable in Settings > Safari.';
+        }
+      }).catch(function(){ status.textContent='Motion permission failed — must be served over HTTPS.'; });
+    });
+
+    var armed = false, resetSwingTrack = null, sensitive = false;
+    var impulse = 0, swinging = false, swingStart = 0, quietSince = 0, cooldownUntil = 0;
+
+    btnArm.addEventListener('click', function(){
+      armed = true; impulse = 0; swinging = false;
+      result.textContent = '';
+      armState.textContent = '🟢 ARMED — swing!';
+      btnArm.disabled = true;
+      if (resetSwingTrack) resetSwingTrack();
+      if (conn && connected) conn.send({ t:'arm' });
+    });
+
+    function startSensors(){
+      var lastSend = 0;
+      var theta = 0, refAxis = null, stillFor = 0;
+      resetSwingTrack = function(){ theta = 0; refAxis = null; stillFor = 0; };
+      addEventListener('devicemotion', function(e){
+        var now = performance.now();
+        var dt = (e.interval && e.interval > 0) ? (e.interval > 1 ? e.interval/1000 : e.interval) : 1/60;
+        dt = Math.min(Math.max(dt, .004), .05);
+
+        var rr = e.rotationRate;
+        if (rr){
+          var wx = rr.beta||0, wy = rr.gamma||0, wz = rr.alpha||0;
+          var wmag = Math.sqrt(wx*wx + wy*wy + wz*wz);
+          if (wmag > 40 && !refAxis) refAxis = [wx/wmag, wy/wmag, wz/wmag];
+          if (refAxis) theta += (wx*refAxis[0] + wy*refAxis[1] + wz*refAxis[2]) * dt;
+          if (wmag < 25){
+            stillFor += dt;
+            theta *= .99;
+            if (stillFor > 1.2) refAxis = null;
+          } else { stillFor = 0; }
+          if (connected && now - lastSend > 25){
+            lastSend = now;
+            conn.send({ t:'orient', swing: theta });
+          }
+        }
+
+        if (!armed || !connected) return;
+        if (now < cooldownUntil) return;
+        var acc = e.acceleration || e.accelerationIncludingGravity;
+        if (!acc) return;
+        var mag = Math.sqrt((acc.x||0)*(acc.x||0) + (acc.y||0)*(acc.y||0) + (acc.z||0)*(acc.z||0));
+        if (!e.acceleration) mag = Math.max(0, mag - 9.81);
+        // short game listens for far gentler motion than a full swing
+        var TH_START = sensitive ? 8 : 18;
+        var TH_MOVE  = sensitive ? 2.5 : 4;
+        var TH_MIN   = sensitive ? 4.5 : 14;
+        if (!swinging){
+          if (mag > TH_START){
+            swinging = true; swingStart = now; impulse = 0; quietSince = 0;
+            conn.send({ t:'swingstart' });
+          }
+        } else {
+          if (mag > TH_MOVE){ impulse += mag * dt; quietSince = 0; }
+          else {
+            if (!quietSince) quietSince = now;
+            if (now - quietSince > 140){
+              if (impulse >= TH_MIN){
+                swinging = false; armed = false;
+                cooldownUntil = now + 1500;
+                conn.send({ t:'swing', power: impulse });
+                armState.textContent = '💥 power ' + Math.min(100, Math.max(2, Math.round((impulse-18)/40*100))) + '%';
+                if (navigator.vibrate) navigator.vibrate(60);
+              } else if (now - swingStart > 3500){
+                swinging = false; impulse = 0;
+                conn.send({ t:'swingcancel' });
+                armState.textContent = '🌫 no swing detected — still armed';
+              }
+            }
+          }
+        }
+      });
+    }
+  }
+})();
+</script>
+</body>
+</html>
