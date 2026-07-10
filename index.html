@@ -199,30 +199,144 @@
     /* ---------- three.js scene ---------- */
     var YD = 0.9144;
     var scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x87c8f0);
-    scene.fog = new THREE.Fog(0x87c8f0, 150, 420);
+    scene.background = new THREE.Color(0xe8f4f0);
+    scene.fog = new THREE.Fog(0xdff0ec, 170, 560);
     var camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, .1, 1200);
     camera.position.set(0, 3.2, 7.5);
     var camLook = new THREE.Vector3(0, 1.4, -20);
+    var camPosT = camera.position.clone(); // glide targets — camera eases toward these
+    var camLookT = camLook.clone();
     var renderer = new THREE.WebGLRenderer({ antialias:true });
     renderer.setSize(innerWidth, innerHeight);
     renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+    renderer.outputEncoding = THREE.sRGBEncoding;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.05;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     document.getElementById('canvasWrap').appendChild(renderer.domElement);
     addEventListener('resize', function(){
       camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
       renderer.setSize(innerWidth, innerHeight);
     });
 
-    scene.add(new THREE.HemisphereLight(0xffffff, 0x3a7d44, 1.0));
-    var sun = new THREE.DirectionalLight(0xfff5e0, .9);
-    sun.position.set(30,60,20); scene.add(sun);
+    scene.add(new THREE.HemisphereLight(0xfff7ec, 0x7cc487, .75));
+    var sun = new THREE.DirectionalLight(0xffedd0, 1.15); // low warm sun — golden hour
+    sun.position.set(28, 55, 24);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.camera.near = 5; sun.shadow.camera.far = 220;
+    sun.shadow.camera.left = -60; sun.shadow.camera.right = 60;
+    sun.shadow.camera.top = 60; sun.shadow.camera.bottom = -60;
+    sun.shadow.bias = -0.0005;
+    scene.add(sun);
+    scene.add(sun.target);
 
-    // ground (rough) — big enough for the par 5
-    var ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(700, 1100),
-      new THREE.MeshLambertMaterial({ color:0x3e9b4f })
-    );
-    ground.rotation.x = -Math.PI/2; ground.position.z = -350; scene.add(ground);
+    // pastel sky dome, soft sun disc, drifting clouds
+    (function(){
+      var sg = new THREE.SphereGeometry(760, 20, 14);
+      var colors = new Float32Array(sg.attributes.position.count * 3);
+      var top = new THREE.Color(0x8fd0f2), hor = new THREE.Color(0xf6efe0);
+      var c = new THREE.Color();
+      for (var i = 0; i < sg.attributes.position.count; i++){
+        var y = sg.attributes.position.getY(i) / 760;
+        c.copy(hor).lerp(top, Math.max(0, y));
+        colors[i*3] = c.r; colors[i*3+1] = c.g; colors[i*3+2] = c.b;
+      }
+      sg.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      var dome = new THREE.Mesh(sg, new THREE.MeshBasicMaterial({ vertexColors:true, side:THREE.BackSide, fog:false }));
+      dome.position.z = -300;
+      scene.add(dome);
+    })();
+    function glowTexture(inner, outer){
+      var cv = document.createElement('canvas'); cv.width = cv.height = 128;
+      var g = cv.getContext('2d');
+      var gr = g.createRadialGradient(64,64,6,64,64,64);
+      gr.addColorStop(0, inner); gr.addColorStop(1, outer);
+      g.fillStyle = gr; g.fillRect(0,0,128,128);
+      return new THREE.CanvasTexture(cv);
+    }
+    var sunSprite = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: glowTexture('rgba(255,244,214,1)','rgba(255,244,214,0)'), fog:false, transparent:true }));
+    sunSprite.scale.set(170,170,1);
+    sunSprite.position.set(310, 190, -540);
+    scene.add(sunSprite);
+    var cloudTex = glowTexture('rgba(255,255,255,.9)','rgba(255,255,255,0)');
+    var clouds = [], cloudDrift = [];
+    for (var ci0 = 0; ci0 < 10; ci0++){
+      var sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: cloudTex, transparent:true, opacity:.5, fog:false }));
+      sp.scale.set(90 + Math.random()*70, 24 + Math.random()*14, 1);
+      sp.position.set((Math.random()-.5)*520, 85 + Math.random()*70, -80 - Math.random()*460);
+      scene.add(sp);
+      clouds.push(sp); cloudDrift.push(2 + Math.random()*3);
+    }
+    var flagCloth = []; // waving flags, animated in tick
+
+    // rolling pastel terrain: flat play corridor, gentle hills at the edges
+    var gGeo = new THREE.PlaneGeometry(900, 1300, 90, 130);
+    (function(){
+      var pos = gGeo.attributes.position;
+      var colors = new Float32Array(pos.count * 3);
+      var base = new THREE.Color(0x6cc178);
+      var c = new THREE.Color();
+      for (var i = 0; i < pos.count; i++){
+        var x = pos.getX(i), zw = -pos.getY(i) - 350;
+        var edge = Math.min(1, Math.max(0, (Math.abs(x) - 70) / 80));
+        edge = edge * edge * (3 - 2 * edge);
+        var h = edge * (6 + 5 * Math.sin(x * .05) * Math.cos(zw * .04) + 8 * (.5 + .5 * Math.sin(x * .013 + zw * .017)));
+        pos.setZ(i, h);
+        var tint = .94 + .09 * Math.sin(x * .12 + zw * .09) * Math.cos(zw * .05);
+        c.copy(base).multiplyScalar(tint + edge * .05);
+        colors[i*3] = c.r; colors[i*3+1] = c.g; colors[i*3+2] = c.b;
+      }
+      gGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      gGeo.computeVertexNormals();
+    })();
+    var ground = new THREE.Mesh(gGeo, new THREE.MeshLambertMaterial({ vertexColors: true }));
+    ground.rotation.x = -Math.PI/2; ground.position.z = -350;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    // procedural trees (deterministic per hole so the course looks the same every round)
+    function mulberry(seed){
+      return function(){
+        seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+        var t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+        t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+      };
+    }
+    var TREE_GREENS = [0x5fae6a, 0x74c07a, 0x8ecf8a, 0x67b98f];
+    function makeTree(rnd){
+      var g = new THREE.Group();
+      var h = 3.5 + rnd() * 4;
+      var trunk = new THREE.Mesh(new THREE.CylinderGeometry(.14,.2,h*.45,8),
+        new THREE.MeshLambertMaterial({ color:0x8a6a4a }));
+      trunk.position.y = h*.225; trunk.castShadow = true; g.add(trunk);
+      var col = TREE_GREENS[Math.floor(rnd()*TREE_GREENS.length)];
+      var puffs = 2 + Math.floor(rnd()*2);
+      for (var i=0;i<puffs;i++){
+        var r = h*.28*(1 - i*.18);
+        var puff = new THREE.Mesh(new THREE.SphereGeometry(r, 10, 10),
+          new THREE.MeshLambertMaterial({ color: col }));
+        puff.position.set((rnd()-.5)*r*.6, h*.45 + i*r*.9, (rnd()-.5)*r*.6);
+        puff.castShadow = true;
+        g.add(puff);
+      }
+      return g;
+    }
+    function scatterTrees(group, seed, zFrom, zTo, count, minX){
+      var rnd = mulberry(seed);
+      for (var i=0;i<count;i++){
+        var x = (minX + rnd()*22) * (rnd() > .5 ? 1 : -1);
+        var z = zFrom + rnd() * (zTo - zFrom);
+        var t = makeTree(rnd);
+        t.position.set(x, 0, z);
+        var s = .8 + rnd()*.7;
+        t.scale.set(s,s,s);
+        group.add(t);
+      }
+    }
 
     /* ---------- range furniture (range + flags modes) ---------- */
     var rangeGroup = new THREE.Group();
@@ -243,6 +357,7 @@
       post.position.set(-10,.8,-yards*YD); rangeGroup.add(post);
     }
     [50,100,150,200,250,300].forEach(sign);
+    scatterTrees(rangeGroup, 42, -30, -300, 20, 30);
     scene.add(rangeGroup);
 
     /* ---------- flags target game (flags mode) ---------- */
@@ -257,11 +372,14 @@
     function makeFlagPole(color){
       var g = new THREE.Group();
       var pole = new THREE.Mesh(new THREE.CylinderGeometry(.06,.06,4.2,8),
-        new THREE.MeshLambertMaterial({ color:0xeeeeee }));
-      pole.position.y = 2.1; g.add(pole);
-      var flagM = new THREE.Mesh(new THREE.PlaneGeometry(1.6,.9),
+        new THREE.MeshLambertMaterial({ color:0xf4f4f4 }));
+      pole.position.y = 2.1; pole.castShadow = true; g.add(pole);
+      var fg = new THREE.PlaneGeometry(1.6,.9);
+      fg.translate(.8, 0, 0); // pivot at the pole so it can wave
+      var flagM = new THREE.Mesh(fg,
         new THREE.MeshBasicMaterial({ color:color, side:THREE.DoubleSide }));
-      flagM.position.set(.8, 3.7, 0); g.add(flagM);
+      flagM.position.set(0, 3.7, 0); g.add(flagM);
+      flagCloth.push(flagM);
       return g;
     }
     flags.forEach(function(fl){
@@ -356,6 +474,42 @@
     function audioCtx(){
       if (!AC){ try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch(e){} }
       if (AC && AC.state === 'suspended') AC.resume();
+      if (AC && !AC.__ambient){
+        AC.__ambient = true;
+        try {
+          // soft wind bed + occasional birdsong — the calm half of the vibe
+          var dur = 4, b = AC.createBuffer(1, AC.sampleRate * dur, AC.sampleRate);
+          var d = b.getChannelData(0), lastS = 0;
+          for (var i = 0; i < d.length; i++){
+            var w = Math.random() * 2 - 1;
+            lastS = (lastS + .02 * w) / 1.02;
+            d[i] = lastS * 3;
+          }
+          var n = AC.createBufferSource(); n.buffer = b; n.loop = true;
+          var f = AC.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 420;
+          var g = AC.createGain(); g.gain.value = .03;
+          n.connect(f); f.connect(g); g.connect(AC.destination); n.start();
+          (function chirp(){
+            setTimeout(function(){
+              try {
+                if (AC.state === 'running'){
+                  var t0 = AC.currentTime;
+                  var o = AC.createOscillator(), og = AC.createGain();
+                  var f0 = 2000 + Math.random() * 1500;
+                  o.frequency.setValueAtTime(f0, t0);
+                  o.frequency.exponentialRampToValueAtTime(f0 * 1.4, t0 + .08);
+                  o.frequency.exponentialRampToValueAtTime(f0 * .9, t0 + .16);
+                  og.gain.setValueAtTime(.04, t0);
+                  og.gain.exponentialRampToValueAtTime(.001, t0 + .22);
+                  o.connect(og); og.connect(AC.destination);
+                  o.start(t0); o.stop(t0 + .25);
+                }
+              } catch(e){}
+              chirp();
+            }, 6000 + Math.random() * 10000);
+          })();
+        } catch(e){}
+      }
       return AC;
     }
     addEventListener('pointerdown', audioCtx); // browsers unlock audio on first click
@@ -391,12 +545,34 @@
       else if (name === 'ob'){ beep(200, 0, .2, 'sawtooth', .1); beep(150, .2, .3, 'sawtooth', .1); }
     }
 
-    function ellipseMesh(e, color, y, opacity){
-      var m = new THREE.Mesh(new THREE.CircleGeometry(1, 36),
-        new THREE.MeshLambertMaterial({ color:color, transparent:(opacity<1), opacity:opacity }));
+    var stripeTexBase = (function(){ // mowing stripes for fairways
+      var cv = document.createElement('canvas'); cv.width = 8; cv.height = 64;
+      var g = cv.getContext('2d');
+      for (var i = 0; i < 8; i++){
+        g.fillStyle = (i % 2) ? '#8edb8f' : '#7fd184';
+        g.fillRect(0, i*8, 8, 8);
+      }
+      var t = new THREE.CanvasTexture(cv);
+      t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      return t;
+    })();
+    function ellipseMesh(e, color, y, opacity, kind){
+      var mat;
+      if (kind === 'fairway'){
+        var t = stripeTexBase.clone();
+        t.needsUpdate = true;
+        t.repeat.set(1, Math.max(2, Math.round(e.rz / 9)));
+        mat = new THREE.MeshLambertMaterial({ map: t });
+      } else if (kind === 'water'){
+        mat = new THREE.MeshPhongMaterial({ color: color, shininess: 90, specular: 0xcfeaff });
+      } else {
+        mat = new THREE.MeshLambertMaterial({ color: color, transparent:(opacity<1), opacity: opacity });
+      }
+      var m = new THREE.Mesh(new THREE.CircleGeometry(1, 40), mat);
       m.rotation.x = -Math.PI/2;
       m.scale.set(e.rx, e.rz, 1);
       m.position.set(e.x, y, e.z);
+      m.receiveShadow = true;
       return m;
     }
     function inRegion(list, x, z){
@@ -415,11 +591,17 @@
       var pad = new THREE.Mesh(new THREE.PlaneGeometry(7,7),
         new THREE.MeshLambertMaterial({ color:0x2f7f3f }));
       pad.rotation.x = -Math.PI/2; pad.position.y = .012; courseGroup.add(pad);
-      curHole.fairways.forEach(function(e){ courseGroup.add(ellipseMesh(e, 0x4cae54, .01, 1)); });
+      curHole.fairways.forEach(function(e){ courseGroup.add(ellipseMesh(e, 0, .01, 1, 'fairway')); });
       // green
-      courseGroup.add(ellipseMesh({ x:curHole.cup.x, z:curHole.cup.z, rx:curHole.greenR, rz:curHole.greenR }, 0x6fd07a, .02, 1));
-      curHole.bunkers.forEach(function(e){ courseGroup.add(ellipseMesh(e, 0xd9c07a, .025, 1)); });
-      curHole.water.forEach(function(e){ courseGroup.add(ellipseMesh(e, 0x3a7bd5, .025, 1)); });
+      courseGroup.add(ellipseMesh({ x:curHole.cup.x, z:curHole.cup.z, rx:curHole.greenR, rz:curHole.greenR }, 0x9fe8a5, .02, 1));
+      curHole.bunkers.forEach(function(e){ courseGroup.add(ellipseMesh(e, 0xf0e3b6, .025, 1)); });
+      curHole.water.forEach(function(e){ courseGroup.add(ellipseMesh(e, 0x7cc6e8, .025, 1, 'water')); });
+      // frame the hole with trees, then prune stale waving flags
+      scatterTrees(courseGroup, i*991+13, -20, curHole.cup.z - 30, 26, 44);
+      flagCloth = flagCloth.filter(function(m){
+        var p = m; while (p.parent) p = p.parent;
+        return p === scene;
+      });
       // cup + pin
       var cup = new THREE.Mesh(new THREE.CylinderGeometry(.35,.35,.08,16),
         new THREE.MeshLambertMaterial({ color:0x111111 }));
@@ -479,7 +661,31 @@
 
     var ball = new THREE.Mesh(new THREE.SphereGeometry(.35, 20, 20),
       new THREE.MeshLambertMaterial({ color:0xffffff }));
+    ball.castShadow = true;
     ball.position.copy(BALL_HOME); scene.add(ball);
+
+    // soft contact shadow under the ball + white flight trail
+    var blob = new THREE.Mesh(new THREE.CircleGeometry(.34, 16),
+      new THREE.MeshBasicMaterial({ color:0x1a4d28, transparent:true, opacity:.16 }));
+    blob.rotation.x = -Math.PI/2; blob.position.y = .015; scene.add(blob);
+    var trailMax = 90, trailCount = 0;
+    var trailGeo = new THREE.BufferGeometry();
+    var trailPos = new Float32Array(trailMax * 3);
+    trailGeo.setAttribute('position', new THREE.BufferAttribute(trailPos, 3));
+    trailGeo.setDrawRange(0, 0);
+    var trail = new THREE.Line(trailGeo,
+      new THREE.LineBasicMaterial({ color:0xffffff, transparent:true, opacity:.35 }));
+    scene.add(trail);
+    function trailPush(){
+      if (trailCount < trailMax){
+        trailPos[trailCount*3] = ball.position.x;
+        trailPos[trailCount*3+1] = ball.position.y;
+        trailPos[trailCount*3+2] = ball.position.z;
+        trailCount++;
+        trailGeo.setDrawRange(0, trailCount);
+        trailGeo.attributes.position.needsUpdate = true;
+      }
+    }
 
     // aim arrow on the ground, pivoting around the ball (rig-local)
     var aimArrow = new THREE.Group();
@@ -493,33 +699,47 @@
     aimArrow.position.set(BALL_HOME.x, 0, BALL_HOME.z);
     rig.add(aimArrow);
 
-    // ---- the GOGOGUY: rounded, friendly, dressed in GOGAMES lime ----
+    // ---- GOGOGUY 2.0: soft shapes, real shoulders, arms that swing ----
     var avatar = new THREE.Group();
     var skinMat = new THREE.MeshLambertMaterial({ color:0xf2c9a0 });
     var shirtMat = new THREE.MeshLambertMaterial({ color:0x7CFC00 });
-    [-.18, .18].forEach(function(lx){
-      var leg = new THREE.Mesh(new THREE.CylinderGeometry(.11,.13,.85,14),
-        new THREE.MeshLambertMaterial({ color:0x333a4d }));
-      leg.position.set(lx, .48, 0); avatar.add(leg);
-      var shoe = new THREE.Mesh(new THREE.SphereGeometry(.15,14,14),
-        new THREE.MeshLambertMaterial({ color:0xffffff }));
-      shoe.scale.set(1,.55,1.5); shoe.position.set(lx,.09,-.06); avatar.add(shoe);
+    var pantsMat = new THREE.MeshLambertMaterial({ color:0x3a4160 });
+    [-.16, .16].forEach(function(lx){
+      var leg = new THREE.Mesh(new THREE.CylinderGeometry(.10,.12,.8,14), pantsMat);
+      leg.position.set(lx, .48, 0); leg.castShadow = true; avatar.add(leg);
+      var shoe = new THREE.Mesh(new THREE.SphereGeometry(.14,14,14),
+        new THREE.MeshLambertMaterial({ color:0xf5f5f5 }));
+      shoe.scale.set(1,.55,1.6); shoe.position.set(lx,.08,-.07); shoe.castShadow = true; avatar.add(shoe);
     });
-    var torso = new THREE.Mesh(new THREE.SphereGeometry(.42,20,20), shirtMat);
-    torso.scale.set(1,1.45,.8); torso.position.y = 1.32; avatar.add(torso);
-    var armL = new THREE.Mesh(new THREE.CylinderGeometry(.075,.075,.62,12), shirtMat);
-    armL.position.set(-.24, 1.5, -.26); armL.rotation.x = .62; armL.rotation.z = .35; avatar.add(armL);
-    var armR = new THREE.Mesh(new THREE.CylinderGeometry(.075,.075,.62,12), shirtMat);
-    armR.position.set(.24, 1.5, -.26); armR.rotation.x = .62; armR.rotation.z = -.35; avatar.add(armR);
-    var hands = new THREE.Mesh(new THREE.SphereGeometry(.10,12,12), skinMat);
-    hands.position.set(0, 1.32, -.5); avatar.add(hands);
-    var head = new THREE.Mesh(new THREE.SphereGeometry(.27,20,20), skinMat);
-    head.position.y = 2.15; avatar.add(head);
+    var hips = new THREE.Mesh(new THREE.SphereGeometry(.30,16,16), pantsMat);
+    hips.scale.set(1,.7,.85); hips.position.y = .92; hips.castShadow = true; avatar.add(hips);
+    var torso = new THREE.Mesh(new THREE.SphereGeometry(.36,20,20), shirtMat);
+    torso.scale.set(1.05,1.35,.8); torso.position.y = 1.38; torso.castShadow = true; avatar.add(torso);
+    // shoulders + a swinging arm group that follows the club
+    var armGroup = new THREE.Group();
+    armGroup.position.set(0, 1.66, -.06);
+    [-.3, .3].forEach(function(sx){
+      var sh = new THREE.Mesh(new THREE.SphereGeometry(.11,12,12), shirtMat);
+      sh.position.set(sx, 0, 0); sh.castShadow = true; armGroup.add(sh);
+      var arm = new THREE.Mesh(new THREE.CylinderGeometry(.065,.06,.58,12), shirtMat);
+      arm.position.set(sx*.55, -.26, -.2);
+      arm.rotation.x = .58; arm.rotation.z = sx > 0 ? -.42 : .42;
+      arm.castShadow = true; armGroup.add(arm);
+    });
+    var hands = new THREE.Mesh(new THREE.SphereGeometry(.095,12,12), skinMat);
+    hands.position.set(0, -.5, -.42); hands.castShadow = true; armGroup.add(hands);
+    avatar.add(armGroup);
+    // head with a friendly face
+    var head = new THREE.Mesh(new THREE.SphereGeometry(.26,20,20), skinMat);
+    head.position.y = 2.12; head.castShadow = true; avatar.add(head);
     [-.09, .09].forEach(function(ex){
-      var eye = new THREE.Mesh(new THREE.SphereGeometry(.032,8,8),
+      var eye = new THREE.Mesh(new THREE.SphereGeometry(.03,8,8),
         new THREE.MeshLambertMaterial({ color:0x222222 }));
-      eye.position.set(ex, 2.19, -.24); avatar.add(eye);
+      eye.position.set(ex, 2.16, -.23); avatar.add(eye);
     });
+    var smile = new THREE.Mesh(new THREE.TorusGeometry(.075,.011,8,14,Math.PI),
+      new THREE.MeshLambertMaterial({ color:0xa96a4d }));
+    smile.position.set(0, 2.05, -.235); smile.rotation.z = Math.PI; avatar.add(smile);
     var capMat = new THREE.MeshLambertMaterial({ color:0xff4444 });
     var cap = new THREE.Mesh(new THREE.SphereGeometry(.29,18,18, 0, Math.PI*2, 0, Math.PI/2), capMat);
     cap.position.y = 2.2; avatar.add(cap);
@@ -569,8 +789,10 @@
       var off = new THREE.Vector3(BALL_HOME.x, 0, BALL_HOME.z);
       off.applyAxisAngle(new THREE.Vector3(0,1,0), yaw);
       rig.position.set(ballPos.x - off.x, 0, ballPos.z - off.z);
-      camera.position.set(ballPos.x - dir.x*8, 3.4, ballPos.z - dir.z*8);
-      camLook.set(ballPos.x + dir.x*30, 1.2, ballPos.z + dir.z*30);
+      camPosT.set(ballPos.x - dir.x*8, 3.6, ballPos.z - dir.z*8);
+      camLookT.set(ballPos.x + dir.x*30, 1.2, ballPos.z + dir.z*30);
+      sun.position.set(ballPos.x + 28, 55, ballPos.z + 24); // shadows follow the player
+      sun.target.position.set(ballPos.x, 0, ballPos.z);
       // short game? tell the phone to listen for much gentler strokes
       if (conn) conn.send({ t:'ctx', sg: mode === 'course' && ballPos.distanceTo(target) < 41 });
     }
@@ -579,8 +801,10 @@
       baseDir.set(0,0,-1);
       rig.rotation.y = 0;
       rig.position.set(0,0,0);
-      camera.position.set(0, 3.2, 7.5);
-      camLook.set(0, 1.4, -20);
+      camPosT.set(0, 3.2, 7.5);
+      camLookT.set(0, 1.4, -20);
+      sun.position.set(28, 55, 24);
+      sun.target.position.set(0, 0, -10);
     }
 
     /* ---------- settings + modes ---------- */
@@ -673,7 +897,8 @@
         totalStrokes: totalStrokes, holesDone: holesDone, roundOver: roundOver,
         ball: { x:+ball.position.x.toFixed(1), y:+ball.position.y.toFixed(1), z:+ball.position.z.toFixed(1) },
         flying: flying, toPin: mode==='course' ? +(ball.position.distanceTo(cupPos)/YD).toFixed(1) : null }; },
-      setMode: setMode
+      setMode: setMode,
+      render: function(){ renderer.render(scene, camera); }
     };
 
     function resetForShot(){
@@ -753,6 +978,7 @@
       shotStart.copy(ball.position);
       if (mode === 'course'){ strokes++; preShot.copy(ball.position); }
       flying = true; sunk = false; pinHitSfx = false; drowned = false;
+      trailCount = 0; trailGeo.setDrawRange(0, 0); // fresh trail each shot
       sfx(putting ? 'putt' : 'hit');
       stateMsg.textContent = (putting ? 'Putt' : (CLUBS[curClub]||CLUBS.driver).label) +
         (sandLie ? ' from the sand' : '') + ': ' +
@@ -953,6 +1179,22 @@
       clubA += (a - clubA) * Math.min(1, dt*14);
       clubPivot.rotation.x = clubA;
       clubPivot.rotation.z = .32 + clubA * .22; // leans out to the ball at address
+      armGroup.rotation.z = -clubA * .85;      // arms swing with the club
+      avatar.position.y = Math.sin(now * .0016) * .02; // gentle breathing
+
+      // world life: waving flags, drifting clouds, ball trail + contact shadow
+      var wavePow = .22 * (.35 + windSpd / 8);
+      for (var fi = 0; fi < flagCloth.length; fi++){
+        flagCloth[fi].rotation.y = Math.sin(now * .002 * (1 + windSpd * .35) + fi * 1.7) * wavePow;
+      }
+      for (var ci = 0; ci < clouds.length; ci++){
+        clouds[ci].position.x += cloudDrift[ci] * dt;
+        if (clouds[ci].position.x > 300) clouds[ci].position.x = -300;
+      }
+      blob.position.set(ball.position.x, .015, ball.position.z);
+      var bs = Math.max(.25, 1 - (ball.position.y - .35) * .04);
+      blob.scale.set(bs, bs, 1);
+      if (flying) trailPush();
 
       if (flying){
         // substep so the simulation keeps up with real time even if frames
@@ -965,6 +1207,10 @@
         }
         camera.lookAt(ball.position.x, Math.max(ball.position.y,1), ball.position.z);
       } else {
+        // glide, don't teleport: ease toward the next address position
+        var ease = 1 - Math.exp(-dt * 2.4);
+        camera.position.lerp(camPosT, ease);
+        camLook.lerp(camLookT, ease);
         camera.lookAt(camLook);
       }
       if (!document.hidden) renderer.render(scene, camera);
