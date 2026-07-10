@@ -76,8 +76,14 @@
     background:rgba(0,0,0,.78);border-radius:22px;padding:18px 22px;min-width:230px;
     box-shadow:0 10px 34px rgba(0,0,0,.4);">
     <div style="font-weight:800;letter-spacing:1px;margin-bottom:12px;">SETTINGS</div>
-    <div style="font-size:13px;color:#9fd39f;margin-bottom:6px;">GoGoGuy</div>
-    <div style="font-size:15px;font-weight:700;margin-bottom:14px;">🏌️ Classic Lime</div>
+    <div style="font-size:13px;color:#9fd39f;margin-bottom:6px;">GoGoGuy skin</div>
+    <div id="skinLabel" style="font-size:15px;font-weight:700;margin-bottom:8px;">🏌️ Classic Lime</div>
+    <div style="display:flex;gap:10px;margin-bottom:14px;">
+      <button class="skinBtn" data-skin="lime" title="Classic Lime" style="width:34px;height:34px;border-radius:50%;border:2px solid rgba(255,255,255,.4);cursor:pointer;background:#7CFC00"></button>
+      <button class="skinBtn" data-skin="ice" title="Ice" style="width:34px;height:34px;border-radius:50%;border:2px solid rgba(255,255,255,.4);cursor:pointer;background:#6fd3ff"></button>
+      <button class="skinBtn" data-skin="flamingo" title="Flamingo" style="width:34px;height:34px;border-radius:50%;border:2px solid rgba(255,255,255,.4);cursor:pointer;background:#ff6ec7"></button>
+      <button class="skinBtn" data-skin="midnight" title="Midnight" style="width:34px;height:34px;border-radius:50%;border:2px solid rgba(255,255,255,.4);cursor:pointer;background:#2e2e3a"></button>
+    </div>
     <div style="font-size:13px;color:#9fd39f;margin-bottom:6px;">Game mode</div>
     <button id="modeBtn" style="width:100%;font-size:15px;font-weight:800;padding:10px 0;border:none;
       border-radius:10px;background:#7CFC00;color:#0b3d1f;cursor:pointer">MODE: RANGE</button>
@@ -286,7 +292,46 @@
         fairways: [ { x: 0, z: -105, rx: 14, rz: 72 }, { x: -8, z: -265, rx: 13, rz: 82 },
                     { x: -13, z: -382, rx: 12, rz: 52 } ],
         bunkers:  [ { x: -2, z: -420, rx: 5, rz: 4 }, { x: -28, z: -432, rx: 4, rz: 4 } ],
-        water:    [ { x: 26, z: -230, rx: 20, rz: 72 } ] }
+        water:    [ { x: 26, z: -230, rx: 20, rz: 72 } ] },
+      { par: 3, name: 'The Dunk',
+        cup: { x: -15, z: -109 },                     // ~120 yds over water
+        greenR: 9,
+        fairways: [],
+        bunkers:  [ { x: -23, z: -104, rx: 4, rz: 3 } ],
+        water:    [ { x: -8, z: -85, rx: 11, rz: 9 } ] },
+      { par: 4, name: 'Beach Day',
+        cup: { x: 18, z: -310 },                      // ~340 yds, sand everywhere
+        greenR: 10,
+        fairways: [ { x: 3, z: -95, rx: 13, rz: 60 }, { x: 12, z: -215, rx: 14, rz: 72 } ],
+        bunkers:  [ { x: 12, z: -300, rx: 5, rz: 4 }, { x: 26, z: -316, rx: 4, rz: 3 },
+                    { x: 6, z: -230, rx: 6, rz: 5 } ],
+        water:    [] },
+      { par: 4, name: 'Sidewinder',
+        cup: { x: -28, z: -332 },                     // ~365 yds bending left
+        greenR: 10,
+        fairways: [ { x: -2, z: -100, rx: 13, rz: 65 }, { x: -18, z: -240, rx: 13, rz: 75 } ],
+        bunkers:  [ { x: -20, z: -325, rx: 5, rz: 4 } ],
+        water:    [ { x: 20, z: -190, rx: 14, rz: 55 } ] },
+      { par: 3, name: 'Ring of Fire',
+        cup: { x: 8, z: -169 },                       // ~185 yds, bunkers all around
+        greenR: 8,
+        fairways: [],
+        bunkers:  [ { x: 2, z: -162, rx: 4, rz: 3 }, { x: 16, z: -172, rx: 4, rz: 3 },
+                    { x: 8, z: -180, rx: 5, rz: 3 } ],
+        water:    [] },
+      { par: 5, name: 'The Monster',
+        cup: { x: 22, z: -460 },                      // ~505 yds, lake crossing
+        greenR: 11,
+        fairways: [ { x: 2, z: -110, rx: 14, rz: 75 }, { x: 8, z: -330, rx: 13, rz: 85 },
+                    { x: 18, z: -430, rx: 11, rz: 40 } ],
+        bunkers:  [ { x: 14, z: -452, rx: 5, rz: 4 } ],
+        water:    [ { x: 0, z: -255, rx: 28, rz: 14 } ] },
+      { par: 4, name: 'Homecoming',
+        cup: { x: -5, z: -365 },                      // ~400 yds finisher
+        greenR: 10,
+        fairways: [ { x: 0, z: -110, rx: 13, rz: 70 }, { x: -3, z: -260, rx: 12, rz: 75 } ],
+        bunkers:  [ { x: -13, z: -360, rx: 4, rz: 3 }, { x: 3, z: -372, rx: 4, rz: 3 } ],
+        water:    [ { x: -25, z: -150, rx: 10, rz: 20 } ] }
     ];
     var courseGroup = new THREE.Group();
     courseGroup.visible = false;
@@ -295,6 +340,47 @@
     var cupPos = new THREE.Vector3();
     var curHole = null;
     var preShot = new THREE.Vector3();
+    var windV = new THREE.Vector3(), windSpd = 0; // per-hole wind (m/s)
+
+    /* ---------- sound effects (synthesized, no files needed) ---------- */
+    var AC = null;
+    function audioCtx(){
+      if (!AC){ try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch(e){} }
+      if (AC && AC.state === 'suspended') AC.resume();
+      return AC;
+    }
+    addEventListener('pointerdown', audioCtx); // browsers unlock audio on first click
+    function sfx(name){
+      var c = audioCtx(); if (!c) return;
+      var t = c.currentTime;
+      function beep(f, at, dur, type, g){
+        var o = c.createOscillator(), ga = c.createGain();
+        o.type = type || 'sine'; o.frequency.value = f;
+        ga.gain.setValueAtTime(g || .2, t + at);
+        ga.gain.exponentialRampToValueAtTime(.001, t + at + dur);
+        o.connect(ga); ga.connect(c.destination);
+        o.start(t + at); o.stop(t + at + dur + .02);
+      }
+      function noise(at, dur, g, fc){
+        var b = c.createBuffer(1, Math.max(1, c.sampleRate * dur), c.sampleRate);
+        var d = b.getChannelData(0);
+        for (var i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+        var n = c.createBufferSource(); n.buffer = b;
+        var f = c.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = fc || 1200;
+        var ga = c.createGain();
+        ga.gain.setValueAtTime(g || .25, t + at);
+        ga.gain.exponentialRampToValueAtTime(.001, t + at + dur);
+        n.connect(f); f.connect(ga); ga.connect(c.destination);
+        n.start(t + at);
+      }
+      if (name === 'hit'){ noise(0, .08, .3, 3000); beep(160, 0, .09, 'sine', .25); }
+      else if (name === 'putt'){ beep(700, 0, .05, 'sine', .12); }
+      else if (name === 'splash'){ noise(0, .5, .3, 700); beep(220, 0, .3, 'sine', .08); }
+      else if (name === 'clank'){ beep(2200, 0, .08, 'square', .1); beep(1500, .02, .12, 'square', .07); }
+      else if (name === 'drop'){ beep(500, 0, .06, 'sine', .2); beep(320, .09, .14, 'sine', .25); }
+      else if (name === 'cheer'){ [523, 659, 784, 1046].forEach(function(f, i){ beep(f, i * .09, .3, 'triangle', .14); }); noise(0, .8, .07, 1500); }
+      else if (name === 'ob'){ beep(200, 0, .2, 'sawtooth', .1); beep(150, .2, .3, 'sawtooth', .1); }
+    }
 
     function ellipseMesh(e, color, y, opacity){
       var m = new THREE.Mesh(new THREE.CircleGeometry(1, 36),
@@ -332,11 +418,22 @@
       var pin = makeFlagPole(0xffe066);
       pin.position.set(cupPos.x, 0, cupPos.z); courseGroup.add(pin);
       strokes = 0;
+      // fresh wind for every hole
+      windSpd = Math.random() * 7; // up to ~15 mph
+      var wAng = Math.random() * Math.PI * 2;
+      windV.set(Math.sin(wAng) * windSpd, 0, Math.cos(wAng) * windSpd);
       ball.position.copy(BALL_HOME);
       placeRig(ball.position, cupPos);
       var toPin = Math.round(ball.position.distanceTo(cupPos)/YD);
-      stateMsg.textContent = 'Hole ' + (i+1) + ' "' + curHole.name + '" · Par ' + curHole.par + ' · ' + toPin + ' yds — tap READY';
+      stateMsg.textContent = 'Hole ' + (i+1) + ' "' + curHole.name + '" · Par ' + curHole.par + ' · ' + toPin +
+        ' yds · wind ' + windText() + ' — tap READY';
       updateCourseHud();
+    }
+    function windText(){
+      if (windSpd < .7) return 'calm';
+      var rel = Math.atan2(windV.x, -windV.z) - Math.atan2(baseDir.x, -baseDir.z);
+      var idx = Math.round(rel / (Math.PI/4)) & 7;
+      return ['↑','↗','→','↘','↓','↙','←','↖'][idx] + ' ' + Math.round(windSpd * 2.24) + ' mph';
     }
     function relScoreText(n){
       return n === 0 ? 'E' : (n > 0 ? '+' + n : '' + n);
@@ -359,8 +456,9 @@
       if (mode !== 'course') return;
       var toPin = Math.round(ball.position.distanceTo(cupPos)/YD);
       var rel = totalStrokes - coursePar(holesDone);
-      hud.innerHTML = 'HOLE ' + (holeIdx+1) + '/3 · PAR ' + curHole.par +
+      hud.innerHTML = 'HOLE ' + (holeIdx+1) + '/' + courseData.length + ' · PAR ' + curHole.par +
         '<br>strokes: ' + strokes + ' · ' + toPin + ' yds to pin' +
+        '<br>wind: ' + windText() +
         '<br>round: ' + (holesDone ? totalStrokes + ' (' + relScoreText(rel) + ')' : '—');
     }
 
@@ -413,12 +511,28 @@
         new THREE.MeshLambertMaterial({ color:0x222222 }));
       eye.position.set(ex, 2.19, -.24); avatar.add(eye);
     });
-    var cap = new THREE.Mesh(new THREE.SphereGeometry(.29,18,18, 0, Math.PI*2, 0, Math.PI/2),
-      new THREE.MeshLambertMaterial({ color:0xff4444 }));
+    var capMat = new THREE.MeshLambertMaterial({ color:0xff4444 });
+    var cap = new THREE.Mesh(new THREE.SphereGeometry(.29,18,18, 0, Math.PI*2, 0, Math.PI/2), capMat);
     cap.position.y = 2.2; avatar.add(cap);
-    var brim = new THREE.Mesh(new THREE.BoxGeometry(.42,.05,.3),
-      new THREE.MeshLambertMaterial({ color:0xff4444 }));
+    var brim = new THREE.Mesh(new THREE.BoxGeometry(.42,.05,.3), capMat);
     brim.position.set(0, 2.3, -.33); avatar.add(brim);
+
+    // GoGoGuy skins
+    var SKINS = {
+      lime:     { shirt: 0x7CFC00, cap: 0xff4444, label: 'Classic Lime' },
+      ice:      { shirt: 0x6fd3ff, cap: 0xffffff, label: 'Ice' },
+      flamingo: { shirt: 0xff6ec7, cap: 0xffffff, label: 'Flamingo' },
+      midnight: { shirt: 0x2e2e3a, cap: 0x7CFC00, label: 'Midnight' }
+    };
+    function applySkin(name){
+      var s = SKINS[name] || SKINS.lime;
+      shirtMat.color.setHex(s.shirt);
+      capMat.color.setHex(s.cap);
+      try { localStorage.setItem('gogoguy_skin', name); } catch(e){}
+      var lbl = document.getElementById('skinLabel');
+      if (lbl) lbl.textContent = '🏌️ ' + s.label;
+    }
+    try { applySkin(localStorage.getItem('gogoguy_skin') || 'lime'); } catch(e){}
 
     // club, pivoted at his hands
     var clubPivot = new THREE.Group();
@@ -467,6 +581,9 @@
     logoEl.title = 'Settings';
     logoEl.addEventListener('click', function(){
       settingsPanel.style.display = (settingsPanel.style.display === 'none') ? 'block' : 'none';
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('.skinBtn'), function(b){
+      b.addEventListener('click', function(){ applySkin(b.getAttribute('data-skin')); });
     });
 
     var mode = 'range';
@@ -569,7 +686,7 @@
 
     /* ---------- ball physics ---------- */
     var vel = new THREE.Vector3();
-    var flying = false, sunk = false;
+    var flying = false, sunk = false, pinHitSfx = false;
     var shotStart = new THREE.Vector3();
 
     // Calibrated from Brecken's swings; nudged down again per feedback.
@@ -600,7 +717,8 @@
       );
       shotStart.copy(ball.position);
       if (mode === 'course'){ strokes++; preShot.copy(ball.position); }
-      flying = true; sunk = false;
+      flying = true; sunk = false; pinHitSfx = false;
+      sfx(putting ? 'putt' : 'hit');
       stateMsg.textContent = 'Swing power: ' + Math.round(p*100) + '%  (energy ' + power.toFixed(0) + ')';
       bigMsg.style.display='none';
     }
@@ -640,6 +758,7 @@
       var inWater = inRegion(curHole.water, bx, bz);
       var oob = Math.abs(bx) > 70 || bz > 15 || bz < cupPos.z - 90;
       if (inWater || oob){
+        sfx(inWater ? 'splash' : 'ob');
         strokes++; // penalty stroke
         ball.position.copy(preShot);
         placeRig(ball.position, cupPos);
@@ -655,6 +774,8 @@
       if (sunk || toCup < 1.2){
         // in the cup, or a tap-in
         var rel = strokes - curHole.par;
+        sfx('drop');
+        if (rel < 0) setTimeout(function(){ sfx('cheer'); }, 300);
         totalStrokes += strokes;
         holesDone = holeIdx + 1;
         var relTotal = totalStrokes - coursePar(holesDone);
@@ -714,6 +835,11 @@
     function stepPhysics(dt){
       vel.y -= 9.81*dt;
       vel.multiplyScalar(1 - 0.015*dt*60*0.02); // light drag
+      // wind pushes the ball while it's airborne (course mode only)
+      if (mode === 'course' && windSpd > .5 && ball.position.y > .6){
+        vel.x += windV.x * .28 * dt;
+        vel.z += windV.z * .28 * dt;
+      }
       ball.position.addScaledVector(vel, dt);
       if (ball.position.y <= .35){
         ball.position.y = .35;
@@ -742,6 +868,7 @@
           endFlight();
         } else if (dc < .45 && sp >= 2.2){
           vel.x *= -.35; vel.z *= -.35; // too hot — rattles the pin and stays out
+          if (!pinHitSfx){ pinHitSfx = true; sfx('clank'); }
         }
       }
     }
