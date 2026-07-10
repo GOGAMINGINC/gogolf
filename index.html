@@ -1101,8 +1101,10 @@
             if (!quietSince) quietSince = now;
             if (now - quietSince > 140){
               // a swing only counts once the club has come back THROUGH the ball:
-              // holding at the top leaves the club angle near its peak, so we wait
-              var swungThrough = Math.abs(theta) < Math.max(15, thetaPeak * .55);
+              // holding at the top leaves the club angle near its peak, so we wait.
+              // the tolerance scales down for tiny strokes (putts rotate just a few
+              // degrees, so a fixed floor would fire on the backstroke pause)
+              var swungThrough = Math.abs(theta) < Math.max(6, thetaPeak * .55);
               if (impulse >= TH_MIN && swungThrough){
                 swinging = false; armed = false;
                 cooldownUntil = now + 1500;
