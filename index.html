@@ -77,6 +77,9 @@
   .clubBtn { flex:1; font-family:'Nunito', sans-serif; font-size:15px; font-weight:900; padding:14px 0;
              border:3px solid #10233F; border-radius:16px; background:#fff; color:#10233F; }
   .clubBtn.sel { background:#FFC93C; color:#10233F; box-shadow:0 4px 0 rgba(16,35,63,.3); }
+  .castBtn { font-family:'Nunito', sans-serif; font-size:12px; font-weight:800; padding:8px 4px;
+             border:3px solid #10233F; border-radius:10px; background:#fff; color:#10233F; }
+  .castBtn.sel { background:#FFC93C; box-shadow:0 3px 0 rgba(16,35,63,.3); }
   #phoneResult { font-family:'Fredoka', sans-serif; font-size:44px; font-weight:700; color:#fff;
                  min-height:54px; text-shadow:0 3px 0 #10233F; }
   #armState { font-family:'Fredoka', sans-serif; font-size:28px; font-weight:700; color:#fff;
@@ -104,13 +107,17 @@
     background:#fff;color:#10233F;border:4px solid #10233F;border-radius:22px;padding:18px 22px;min-width:230px;
     box-shadow:0 10px 0 rgba(16,35,63,.25);">
     <div style="font-family:'Fredoka',sans-serif;font-weight:700;font-size:18px;margin-bottom:12px;">Settings</div>
-    <div style="font-size:13px;font-weight:800;color:#8895a7;margin-bottom:6px;">GoGoGuy skin</div>
-    <div id="skinLabel" style="font-size:15px;font-weight:800;margin-bottom:8px;">🏌️ Classic Lime</div>
-    <div style="display:flex;gap:10px;margin-bottom:14px;">
-      <button class="skinBtn" data-skin="lime" title="Classic Lime" style="width:34px;height:34px;border-radius:50%;border:3px solid #10233F;cursor:pointer;background:#7CFC00"></button>
-      <button class="skinBtn" data-skin="ice" title="Ice" style="width:34px;height:34px;border-radius:50%;border:3px solid #10233F;cursor:pointer;background:#6fd3ff"></button>
-      <button class="skinBtn" data-skin="flamingo" title="Flamingo" style="width:34px;height:34px;border-radius:50%;border:3px solid #10233F;cursor:pointer;background:#ff6ec7"></button>
-      <button class="skinBtn" data-skin="midnight" title="Midnight" style="width:34px;height:34px;border-radius:50%;border:3px solid #10233F;cursor:pointer;background:#2e2e3a"></button>
+    <div style="font-size:13px;font-weight:800;color:#8895a7;margin-bottom:6px;">Choose your player · Desk League</div>
+    <div id="skinLabel" style="font-size:15px;font-weight:800;margin-bottom:8px;">✏️ Pencil Dude</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:14px;">
+      <button class="castBtn sel" data-char="pencil">✏️ Pencil Dude</button>
+      <button class="castBtn" data-char="fork">🍴 Fork Man</button>
+      <button class="castBtn" data-char="crayon">🖍️ Crayon Kid</button>
+      <button class="castBtn" data-char="highlighter">🖊️ Highlighter</button>
+      <button class="castBtn" data-char="mug">☕ Mug Shot</button>
+      <button class="castBtn" data-char="eraser">🩹 Big Eraser</button>
+      <button class="castBtn" data-char="sticky">📝 Sticky</button>
+      <button class="castBtn" data-char="glue">🧴 Glue Stick</button>
     </div>
     <div style="font-size:13px;font-weight:800;color:#8895a7;margin-bottom:6px;">Game mode</div>
     <button id="modeBtn" style="width:100%;font-family:'Nunito',sans-serif;font-size:15px;font-weight:900;padding:11px 0;border:3px solid #10233F;
@@ -721,69 +728,181 @@
     aimArrow.position.set(BALL_HOME.x, 0, BALL_HOME.z);
     rig.add(aimArrow);
 
-    // ---- GOGOGUY 2.0: soft shapes, real shoulders, arms that swing ----
+    // ---- THE GOGO CAST: Desk League Series 1 ----
+    // brand constants: one shared face, white mitts, white shoes on every character
     var avatar = new THREE.Group();
-    var skinMat = new THREE.MeshLambertMaterial({ color:0xf2c9a0 });
-    var shirtMat = new THREE.MeshLambertMaterial({ color:0x7CFC00 });
-    var pantsMat = new THREE.MeshLambertMaterial({ color:0x3a4160 });
-    [-.16, .16].forEach(function(lx){
-      var leg = new THREE.Mesh(new THREE.CylinderGeometry(.10,.12,.8,14), pantsMat);
-      leg.position.set(lx, .48, 0); leg.castShadow = true; avatar.add(leg);
-      var shoe = new THREE.Mesh(new THREE.SphereGeometry(.14,14,14),
-        new THREE.MeshLambertMaterial({ color:0xf5f5f5 }));
-      shoe.scale.set(1,.55,1.6); shoe.position.set(lx,.08,-.07); shoe.castShadow = true; avatar.add(shoe);
-    });
-    var hips = new THREE.Mesh(new THREE.SphereGeometry(.30,16,16), pantsMat);
-    hips.scale.set(1,.7,.85); hips.position.y = .92; hips.castShadow = true; avatar.add(hips);
-    var torso = new THREE.Mesh(new THREE.SphereGeometry(.36,20,20), shirtMat);
-    torso.scale.set(1.05,1.35,.8); torso.position.y = 1.38; torso.castShadow = true; avatar.add(torso);
-    // shoulders + a swinging arm group that follows the club
+    function lamb(color){ return new THREE.MeshLambertMaterial({ color: color }); }
+    function part(geo, color){
+      var m = new THREE.Mesh(geo, lamb(color));
+      m.castShadow = true;
+      return m;
+    }
+    function partAt(geo, color, x, y, z){
+      var m = part(geo, color);
+      m.position.set(x, y, z);
+      return m;
+    }
+    function makeFace(scale, blushColor){
+      var f = new THREE.Group();
+      var navy = lamb(0x10233F);
+      [-1, 1].forEach(function(sx){
+        var eye = part(new THREE.SphereGeometry(.085*scale, 12, 12), 0xffffff);
+        eye.scale.set(1, 1.25, .7);
+        eye.position.set(sx*.115*scale, .05*scale, 0);
+        f.add(eye);
+        var pupil = new THREE.Mesh(new THREE.SphereGeometry(.045*scale, 10, 10), navy);
+        pupil.position.set(sx*.115*scale, .03*scale, .05*scale);
+        f.add(pupil);
+        var glint = new THREE.Mesh(new THREE.SphereGeometry(.014*scale, 6, 6),
+          new THREE.MeshBasicMaterial({ color:0xffffff }));
+        glint.position.set(sx*.115*scale + .018*scale, .065*scale, .085*scale);
+        f.add(glint);
+        var blush = new THREE.Mesh(new THREE.CircleGeometry(.05*scale, 12),
+          new THREE.MeshBasicMaterial({ color: blushColor || 0xFF5A5F, transparent:true, opacity:.55 }));
+        blush.position.set(sx*.2*scale, -.07*scale, .02*scale);
+        f.add(blush);
+      });
+      var smile = new THREE.Mesh(new THREE.TorusGeometry(.07*scale, .015*scale, 8, 14, Math.PI), navy);
+      smile.rotation.z = Math.PI;
+      smile.position.set(0, -.07*scale, .03*scale);
+      f.add(smile);
+      return f;
+    }
+    function attachFace(g, y, z, scale, blushColor){
+      var f = makeFace(scale || 1, blushColor);
+      f.rotation.y = Math.PI; // face out the front (toward the ball line)
+      f.position.set(0, y, z);
+      g.add(f);
+    }
+    function makeShoes(g){
+      [-.16, .16].forEach(function(lx){
+        var shoe = part(new THREE.SphereGeometry(.14, 14, 14), 0xf5f5f5);
+        shoe.scale.set(1, .5, 1.6);
+        shoe.position.set(lx, .07, -.06);
+        g.add(shoe);
+      });
+    }
+    function buildPencil(){
+      var g = new THREE.Group(); makeShoes(g);
+      var wood = part(new THREE.ConeGeometry(.26, .38, 16), 0xe6bd80);
+      wood.rotation.x = Math.PI; wood.position.y = .5; g.add(wood);
+      var tip = part(new THREE.ConeGeometry(.09, .16, 10), 0x3a3a3a);
+      tip.rotation.x = Math.PI; tip.position.y = .34; g.add(tip);
+      g.add(partAt(new THREE.CylinderGeometry(.26, .26, 1.05, 6), 0xFFC93C, 0, 1.2, 0));
+      g.add(partAt(new THREE.CylinderGeometry(.27, .27, .14, 16), 0xcfd3d8, 0, 1.79, 0));
+      g.add(partAt(new THREE.CylinderGeometry(.25, .25, .16, 16), 0xff87b3, 0, 1.93, 0));
+      var cap = part(new THREE.SphereGeometry(.25, 14, 14, 0, Math.PI*2, 0, Math.PI/2), 0xff87b3);
+      cap.position.y = 2.0; g.add(cap);
+      attachFace(g, 1.28, -.265, 1);
+      return g;
+    }
+    function buildFork(){
+      var g = new THREE.Group(); makeShoes(g);
+      g.add(partAt(new THREE.BoxGeometry(.34, 1.15, .22), 0xd2d9e2, 0, .98, 0));
+      g.add(partAt(new THREE.BoxGeometry(.52, .18, .22), 0xd2d9e2, 0, 1.62, 0));
+      [-.19, -.065, .065, .19].forEach(function(tx, i){
+        var h = (i === 0 || i === 3) ? .34 : .44;
+        g.add(partAt(new THREE.BoxGeometry(.075, h, .18), 0xd2d9e2, tx, 1.71 + h/2, 0));
+      });
+      attachFace(g, 1.12, -.115, .95);
+      return g;
+    }
+    function buildCrayon(){
+      var g = new THREE.Group(); makeShoes(g);
+      g.add(partAt(new THREE.CylinderGeometry(.3, .3, 1.15, 18), 0x23A6D5, 0, .95, 0));
+      [.58, 1.32].forEach(function(by){
+        var band = new THREE.Mesh(new THREE.CylinderGeometry(.305, .305, .08, 18),
+          new THREE.MeshLambertMaterial({ color:0xffffff, transparent:true, opacity:.55 }));
+        band.position.y = by; g.add(band);
+      });
+      g.add(partAt(new THREE.ConeGeometry(.3, .48, 18), 0x1580ab, 0, 1.76, 0));
+      attachFace(g, 1.05, -.305, 1, 0xffffff);
+      return g;
+    }
+    function buildHighlighter(){
+      var g = new THREE.Group(); makeShoes(g);
+      g.add(partAt(new THREE.CylinderGeometry(.3, .3, 1.2, 18), 0xd4f52f, 0, 1.0, 0));
+      g.add(partAt(new THREE.CylinderGeometry(.31, .31, .09, 18), 0xc3c9d1, 0, 1.64, 0));
+      var tipH = part(new THREE.BoxGeometry(.36, .34, .3), 0xf2921f);
+      tipH.rotation.z = .18; tipH.position.y = 1.86; g.add(tipH);
+      attachFace(g, 1.05, -.305, 1, 0x8a9a20);
+      return g;
+    }
+    function buildMug(){
+      var g = new THREE.Group(); makeShoes(g);
+      g.add(partAt(new THREE.CylinderGeometry(.42, .34, 1.0, 20), 0xeef1f4, 0, .95, 0));
+      var rim = part(new THREE.TorusGeometry(.41, .035, 8, 24), 0xFF5A5F);
+      rim.rotation.x = Math.PI/2; rim.position.y = 1.37; g.add(rim);
+      var handle = part(new THREE.TorusGeometry(.2, .06, 8, 18), 0xeef1f4);
+      handle.rotation.y = Math.PI/2; handle.position.set(.46, .95, 0); g.add(handle);
+      attachFace(g, 1.0, -.4, 1);
+      return g;
+    }
+    function buildEraser(){
+      var g = new THREE.Group(); makeShoes(g);
+      g.add(partAt(new THREE.BoxGeometry(1.0, .78, .45), 0xff9ec4, 0, .92, 0));
+      g.add(partAt(new THREE.BoxGeometry(1.02, .24, .47), 0x3f6fd6, 0, .62, 0));
+      attachFace(g, 1.08, -.235, 1, 0xdc3c78);
+      return g;
+    }
+    function buildSticky(){
+      var g = new THREE.Group(); makeShoes(g);
+      var noteG = new THREE.Group();
+      noteG.add(partAt(new THREE.BoxGeometry(.95, .95, .12), 0xFDD64B, 0, .88, 0));
+      noteG.add(partAt(new THREE.BoxGeometry(.95, .18, .125), 0xe9bf3e, 0, 1.28, 0));
+      var curl = part(new THREE.BoxGeometry(.24, .24, .13), 0xe9bf3e);
+      curl.rotation.z = .6; curl.position.set(.38, .48, 0); noteG.add(curl);
+      noteG.rotation.z = .07;
+      g.add(noteG);
+      attachFace(g, .95, -.075, 1);
+      return g;
+    }
+    function buildGlue(){
+      var g = new THREE.Group(); makeShoes(g);
+      g.add(partAt(new THREE.CylinderGeometry(.3, .3, .95, 18), 0xeef1f4, 0, .85, 0));
+      g.add(partAt(new THREE.CylinderGeometry(.305, .305, .3, 18), 0xF59B2A, 0, .55, 0));
+      g.add(partAt(new THREE.CylinderGeometry(.32, .32, .4, 18), 0x8a53d6, 0, 1.52, 0));
+      var capTop = part(new THREE.SphereGeometry(.32, 14, 14, 0, Math.PI*2, 0, Math.PI/2), 0x8a53d6);
+      capTop.position.y = 1.72; g.add(capTop);
+      attachFace(g, 1.05, -.305, 1);
+      return g;
+    }
+    var CAST = [
+      { id:'pencil',      name:'Pencil Dude', emoji:'✏️', build:buildPencil },
+      { id:'fork',        name:'Fork Man',    emoji:'🍴', build:buildFork },
+      { id:'crayon',      name:'Crayon Kid',  emoji:'🖍️', build:buildCrayon },
+      { id:'highlighter', name:'Highlighter', emoji:'🖊️', build:buildHighlighter },
+      { id:'mug',         name:'Mug Shot',    emoji:'☕', build:buildMug },
+      { id:'eraser',      name:'Big Eraser',  emoji:'🩹', build:buildEraser },
+      { id:'sticky',      name:'Sticky',      emoji:'📝', build:buildSticky },
+      { id:'glue',        name:'Glue Stick',  emoji:'🧴', build:buildGlue }
+    ];
+    var currentBody = null;
+    function setCharacter(id){
+      var def = null;
+      for (var i = 0; i < CAST.length; i++) if (CAST[i].id === id) def = CAST[i];
+      def = def || CAST[0];
+      if (currentBody) avatar.remove(currentBody);
+      currentBody = def.build();
+      avatar.add(currentBody);
+      try { localStorage.setItem('gogames_character', def.id); } catch(e){}
+      var lbl = document.getElementById('skinLabel');
+      if (lbl) lbl.textContent = def.emoji + ' ' + def.name;
+      Array.prototype.forEach.call(document.querySelectorAll('.castBtn'), function(b){
+        b.className = 'castBtn' + (b.getAttribute('data-char') === def.id ? ' sel' : '');
+      });
+    }
+    // the swing rig: white mitts that hold the club (kept from GoGoGuy)
     var armGroup = new THREE.Group();
     armGroup.position.set(0, 1.66, -.06);
-    [-.3, .3].forEach(function(sx){
-      var sh = new THREE.Mesh(new THREE.SphereGeometry(.11,12,12), shirtMat);
-      sh.position.set(sx, 0, 0); sh.castShadow = true; armGroup.add(sh);
-      var arm = new THREE.Mesh(new THREE.CylinderGeometry(.065,.06,.58,12), shirtMat);
-      arm.position.set(sx*.55, -.26, -.2);
-      arm.rotation.x = .58; arm.rotation.z = sx > 0 ? -.42 : .42;
-      arm.castShadow = true; armGroup.add(arm);
+    [-.07, .07].forEach(function(mx){
+      var mitt = part(new THREE.SphereGeometry(.115, 14, 14), 0xffffff);
+      mitt.position.set(mx, -.5, -.42);
+      armGroup.add(mitt);
     });
-    var hands = new THREE.Mesh(new THREE.SphereGeometry(.095,12,12), skinMat);
-    hands.position.set(0, -.5, -.42); hands.castShadow = true; armGroup.add(hands);
     avatar.add(armGroup);
-    // head with a friendly face
-    var head = new THREE.Mesh(new THREE.SphereGeometry(.26,20,20), skinMat);
-    head.position.y = 2.12; head.castShadow = true; avatar.add(head);
-    [-.09, .09].forEach(function(ex){
-      var eye = new THREE.Mesh(new THREE.SphereGeometry(.03,8,8),
-        new THREE.MeshLambertMaterial({ color:0x222222 }));
-      eye.position.set(ex, 2.16, -.23); avatar.add(eye);
-    });
-    var smile = new THREE.Mesh(new THREE.TorusGeometry(.075,.011,8,14,Math.PI),
-      new THREE.MeshLambertMaterial({ color:0xa96a4d }));
-    smile.position.set(0, 2.05, -.235); smile.rotation.z = Math.PI; avatar.add(smile);
-    var capMat = new THREE.MeshLambertMaterial({ color:0xff4444 });
-    var cap = new THREE.Mesh(new THREE.SphereGeometry(.29,18,18, 0, Math.PI*2, 0, Math.PI/2), capMat);
-    cap.position.y = 2.2; avatar.add(cap);
-    var brim = new THREE.Mesh(new THREE.BoxGeometry(.42,.05,.3), capMat);
-    brim.position.set(0, 2.3, -.33); avatar.add(brim);
-
-    // GoGoGuy skins
-    var SKINS = {
-      lime:     { shirt: 0x7CFC00, cap: 0xff4444, label: 'Classic Lime' },
-      ice:      { shirt: 0x6fd3ff, cap: 0xffffff, label: 'Ice' },
-      flamingo: { shirt: 0xff6ec7, cap: 0xffffff, label: 'Flamingo' },
-      midnight: { shirt: 0x2e2e3a, cap: 0x7CFC00, label: 'Midnight' }
-    };
-    function applySkin(name){
-      var s = SKINS[name] || SKINS.lime;
-      shirtMat.color.setHex(s.shirt);
-      capMat.color.setHex(s.cap);
-      try { localStorage.setItem('gogoguy_skin', name); } catch(e){}
-      var lbl = document.getElementById('skinLabel');
-      if (lbl) lbl.textContent = '🏌️ ' + s.label;
-    }
-    try { applySkin(localStorage.getItem('gogoguy_skin') || 'lime'); } catch(e){}
+    try { setCharacter(localStorage.getItem('gogames_character') || 'pencil'); }
+    catch(e){ setCharacter('pencil'); }
 
     // club, pivoted at his hands
     var clubPivot = new THREE.Group();
@@ -837,8 +956,8 @@
     logoEl.addEventListener('click', function(){
       settingsPanel.style.display = (settingsPanel.style.display === 'none') ? 'block' : 'none';
     });
-    Array.prototype.forEach.call(document.querySelectorAll('.skinBtn'), function(b){
-      b.addEventListener('click', function(){ applySkin(b.getAttribute('data-skin')); });
+    Array.prototype.forEach.call(document.querySelectorAll('.castBtn'), function(b){
+      b.addEventListener('click', function(){ setCharacter(b.getAttribute('data-char')); });
     });
 
     var mode = 'range';
