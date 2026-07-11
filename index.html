@@ -122,7 +122,8 @@
     <div style="font-size:13px;font-weight:800;color:#8895a7;margin-bottom:6px;">Game mode</div>
     <button id="modeBtn" style="width:100%;font-family:'Nunito',sans-serif;font-size:15px;font-weight:900;padding:11px 0;border:3px solid #10233F;
       border-radius:12px;background:#FFC93C;color:#10233F;cursor:pointer;box-shadow:0 4px 0 rgba(16,35,63,.25)">MODE: RANGE</button>
-    <div style="font-size:11px;font-weight:700;color:#8895a7;margin-top:10px;">click the Go Golf logo to close</div>
+    <div style="font-size:12px;font-weight:800;margin-top:8px;"><a href="https://gogaminginc.github.io/gokart/" style="color:#FF5A5F;text-decoration:none;">🏎️ Play GOKART →</a></div>
+    <div style="font-size:11px;font-weight:700;color:#8895a7;margin-top:8px;">click the Go Golf logo to close</div>
   </div>
   <div id="bigMsg"></div>
   <div id="stateMsg">Waiting for controller</div>
@@ -1195,8 +1196,14 @@
         var relTotal = totalStrokes - coursePar(holesDone);
         if (holeIdx >= courseData.length - 1){
           roundOver = true;
+          var oldRec = null;
+          try { oldRec = +localStorage.getItem('gogolf_best_round') || null; } catch(e){}
+          var newRec = !oldRec || totalStrokes < oldRec;
+          if (newRec){ try { localStorage.setItem('gogolf_best_round', totalStrokes); } catch(e){} }
           bigMsg.innerHTML = parName(rel) + '<br><span style="font-size:36px">🏆 ROUND COMPLETE</span>' +
-            '<br><span style="font-size:30px;color:#eaffea">' + totalStrokes + ' strokes (' + relScoreText(relTotal) + ')</span>' +
+            (newRec ? '<br><span style="font-size:30px;color:#FFC93C">⭐ NEW COURSE RECORD!</span>' : '') +
+            '<br><span style="font-size:30px;color:#eaffea">' + totalStrokes + ' strokes (' + relScoreText(relTotal) + ')' +
+            (!newRec && oldRec ? ' · record ' + oldRec : '') + '</span>' +
             '<br><span style="font-size:20px;color:#c9e8c9">tap READY to play again</span>';
           stateMsg.textContent = 'Round over — tap READY for a new round';
           if (conn) conn.send({ t:'result', yards: traveled, line2: 'Round: ' + totalStrokes + ' (' + relScoreText(relTotal) + ')' });
