@@ -683,15 +683,24 @@
     }
 
     /* ---------- the player rig: GoGoGuy + club + aim arrow ---------- */
-    var BALL_HOME = new THREE.Vector3(0.9, .35, -1.2);
+    var BALL_HOME = new THREE.Vector3(0.9, .49, -1.2); // sits up on the tee
     var baseDir = new THREE.Vector3(0, 0, -1); // direction to target from the ball
     var rig = new THREE.Group();
     scene.add(rig);
 
-    var ball = new THREE.Mesh(new THREE.SphereGeometry(.35, 20, 20),
+    var ball = new THREE.Mesh(new THREE.SphereGeometry(.27, 20, 20),
       new THREE.MeshLambertMaterial({ color:0xffffff }));
     ball.castShadow = true;
     ball.position.copy(BALL_HOME); scene.add(ball);
+
+    // a proper wooden tee under the ball at address
+    var teeMesh = new THREE.Group();
+    var teeStem = part(new THREE.CylinderGeometry(.045, .035, .17, 10), 0xf3ead8);
+    teeStem.position.y = .085; teeMesh.add(teeStem);
+    var teeCup = part(new THREE.CylinderGeometry(.1, .05, .07, 10), 0xf3ead8);
+    teeCup.position.y = .2; teeMesh.add(teeCup);
+    teeMesh.position.set(BALL_HOME.x, 0, BALL_HOME.z);
+    scene.add(teeMesh);
 
     // soft contact shadow under the ball + white flight trail
     var blob = new THREE.Mesh(new THREE.CircleGeometry(.34, 16),
@@ -1176,7 +1185,8 @@
       }
       var toCup = ball.position.distanceTo(cupPos);
       if (sunk || toCup < 1.2){
-        // in the cup, or a tap-in
+        // in the cup, or a tap-in — either way, show it IN the hole
+        ball.position.set(cupPos.x, -.06, cupPos.z);
         var rel = strokes - curHole.par;
         sfx('drop');
         if (rel < 0) setTimeout(function(){ sfx('cheer'); }, 300);
@@ -1250,8 +1260,8 @@
         vel.z += windV.z * .28 * dt;
       }
       ball.position.addScaledVector(vel, dt);
-      if (ball.position.y <= .35){
-        ball.position.y = .35;
+      if (ball.position.y <= .27){
+        ball.position.y = .27;
         // water grabs the ball the moment it touches down — no skipping across ponds
         if (mode === 'course' && curHole && inRegion(curHole.water, ball.position.x, ball.position.z)){
           drowned = true;
@@ -1279,8 +1289,8 @@
         var dc = Math.sqrt(dxc*dxc + dzc*dzc);
         var sp = vel.length();
         if (dc < .5 && sp < 2.2){
-          sunk = true; // slow enough to drop
-          ball.position.set(cupPos.x, .35, cupPos.z);
+          sunk = true; // slow enough to drop — INTO the cup it goes
+          ball.position.set(cupPos.x, -.06, cupPos.z);
           vel.set(0,0,0);
           endFlight();
         } else if (dc < .45 && sp >= 2.2){
@@ -1333,8 +1343,13 @@
         if (clouds[ci].position.x > 300) clouds[ci].position.x = -300;
       }
       blob.position.set(ball.position.x, .015, ball.position.z);
-      var bs = Math.max(.25, 1 - (ball.position.y - .35) * .04);
+      var bs = Math.max(.25, 1 - (ball.position.y - .27) * .04);
       blob.scale.set(bs, bs, 1);
+      blob.visible = ball.position.y > 0; // hide when the ball is in the cup
+      // the tee appears whenever the ball is back at its home spot
+      teeMesh.visible = Math.abs(ball.position.x - BALL_HOME.x) < .05 &&
+                        Math.abs(ball.position.z - BALL_HOME.z) < .05 &&
+                        ball.position.y > .4;
       if (flying) trailPush();
 
       if (flying){
