@@ -623,8 +623,8 @@
       pad.rotation.x = -Math.PI/2; pad.position.y = .012; courseGroup.add(pad);
       curHole.fairways.forEach(function(e){ courseGroup.add(ellipseMesh(e, 0, .01, 1, 'fairway')); });
       // green
-      courseGroup.add(ellipseMesh({ x:curHole.cup.x, z:curHole.cup.z, rx:curHole.greenR, rz:curHole.greenR }, 0x9fe8a5, .02, 1));
-      curHole.bunkers.forEach(function(e){ courseGroup.add(ellipseMesh(e, 0xf0e3b6, .025, 1)); });
+      courseGroup.add(ellipseMesh({ x:curHole.cup.x, z:curHole.cup.z, rx:curHole.greenR, rz:curHole.greenR }, 0x4fbf5e, .02, 1));
+      curHole.bunkers.forEach(function(e){ courseGroup.add(ellipseMesh(e, 0xdfb56a, .025, 1)); });
       curHole.water.forEach(function(e){ courseGroup.add(ellipseMesh(e, 0x7cc6e8, .025, 1, 'water')); });
       // frame the hole with trees, then prune stale waving flags
       scatterTrees(courseGroup, i*991+13, -20, curHole.cup.z - 30, 26, 44);
@@ -1082,6 +1082,7 @@
     var E_MIN = 18, E_SPAN = 40;
     function onGreenNow(){
       if (mode !== 'course' || !curHole) return false;
+      if (inRegion(curHole.bunkers, ball.position.x, ball.position.z)) return false; // sand is never green
       var dx = ball.position.x - cupPos.x, dz = ball.position.z - cupPos.z;
       return Math.sqrt(dx*dx + dz*dz) < curHole.greenR;
     }
