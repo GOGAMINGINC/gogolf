@@ -1190,8 +1190,9 @@
         // in the cup, or a tap-in — either way, show it IN the hole
         ball.position.set(cupPos.x, -.06, cupPos.z);
         var rel = strokes - curHole.par;
+        var resultName = (strokes === 1) ? '🎯 ACE!!! HOLE IN ONE!' : parName(rel);
         sfx('drop');
-        if (rel < 0) setTimeout(function(){ sfx('cheer'); }, 300);
+        if (rel < 0 || strokes === 1) setTimeout(function(){ sfx('cheer'); }, 300);
         totalStrokes += strokes;
         holesDone = holeIdx + 1;
         var relTotal = totalStrokes - coursePar(holesDone);
@@ -1201,7 +1202,7 @@
           try { oldRec = +localStorage.getItem('gogolf_best_round') || null; } catch(e){}
           var newRec = !oldRec || totalStrokes < oldRec;
           if (newRec){ try { localStorage.setItem('gogolf_best_round', totalStrokes); } catch(e){} }
-          bigMsg.innerHTML = parName(rel) + '<br><span style="font-size:36px">🏆 ROUND COMPLETE</span>' +
+          bigMsg.innerHTML = resultName + '<br><span style="font-size:36px">🏆 ROUND COMPLETE</span>' +
             (newRec ? '<br><span style="font-size:30px;color:#FFC93C">⭐ NEW COURSE RECORD!</span>' : '') +
             '<br><span style="font-size:30px;color:#eaffea">' + totalStrokes + ' strokes (' + relScoreText(relTotal) + ')' +
             (!newRec && oldRec ? ' · record ' + oldRec : '') + '</span>' +
@@ -1209,9 +1210,9 @@
           stateMsg.textContent = 'Round over — tap READY for a new round';
           if (conn) conn.send({ t:'result', yards: traveled, line2: 'Round: ' + totalStrokes + ' (' + relScoreText(relTotal) + ')' });
         } else {
-          bigMsg.innerHTML = parName(rel) +
+          bigMsg.innerHTML = resultName +
             '<br><span style="font-size:30px;color:#eaffea">' + strokes + ' strokes · round ' + relScoreText(relTotal) + '</span>';
-          if (conn) conn.send({ t:'result', yards: traveled, line2: parName(rel) });
+          if (conn) conn.send({ t:'result', yards: traveled, line2: resultName });
           holeIdx++;
           setTimeout(function(){
             if (mode === 'course' && !roundOver) buildHole(holeIdx);
