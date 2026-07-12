@@ -101,8 +101,14 @@
     <div style="font-family:'Nunito',sans-serif;font-weight:900;font-size:12px;letter-spacing:.16em;color:rgba(255,255,255,.85)">ROOM CODE</div>
     <div id="joinCode">····</div>
     <div class="hint" id="hostNetStatus">Starting connection service…</div>
+    <div id="lobbyList" style="display:flex;flex-wrap:wrap;justify-content:center;max-width:560px"></div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin-top:4px">
+      <button id="startBtn" style="display:none;font-family:'Fredoka',sans-serif;font-weight:700;font-size:21px;padding:15px 32px;border:3px solid #10233F;border-radius:100px;background:#FF5A5F;color:#fff;box-shadow:0 6px 0 #c9353a">START ROUND ⛳</button>
+      <button id="rangeBtn" style="display:none;font-family:'Nunito',sans-serif;font-weight:900;font-size:15px;padding:15px 24px;border:3px solid #10233F;border-radius:100px;background:#FFC93C;color:#10233F;box-shadow:0 5px 0 #e0a916">FREE PLAY 🏌️</button>
+    </div>
   </div>
   <div id="hud">waiting for phone…</div>
+  <div id="standings" style="display:none;position:fixed;top:96px;right:18px;z-index:20;background:#fff;color:#10233F;border:3px solid #10233F;border-radius:16px;padding:11px 15px;min-width:214px;box-shadow:0 5px 0 rgba(16,35,63,.22);font-size:14px;font-weight:800"></div>
   <div id="settingsPanel" style="display:none;position:fixed;top:60px;left:18px;z-index:30;
     background:#fff;color:#10233F;border:4px solid #10233F;border-radius:22px;padding:18px 22px;min-width:230px;
     box-shadow:0 10px 0 rgba(16,35,63,.25);">
@@ -126,12 +132,16 @@
     <div style="font-size:11px;font-weight:700;color:#8895a7;margin-top:8px;">click the Go Golf logo to close</div>
   </div>
   <div id="bigMsg"></div>
+  <div id="scorecard" style="display:none;position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:25;background:#fff;color:#10233F;border:4px solid #10233F;border-radius:24px;padding:26px 30px;box-shadow:0 12px 0 rgba(16,35,63,.3);text-align:center;max-width:94vw;max-height:90vh;overflow:auto"></div>
   <div id="stateMsg">Waiting for controller</div>
 </div>
 
 <!-- PHONE -->
 <div id="phoneUI">
   <div id="phoneStatus">Connecting to laptop…</div>
+  <input id="nameInput" maxlength="12" placeholder="Your name" autocomplete="off"
+    style="display:none;font-family:'Nunito',sans-serif;font-weight:800;font-size:18px;text-align:center;padding:14px;border:3px solid #10233F;border-radius:16px;width:100%;max-width:340px;color:#10233F">
+  <div id="turnBanner" style="display:none;font-family:'Fredoka',sans-serif;font-weight:700;font-size:24px;color:#fff;text-shadow:0 2px 0 #10233F"></div>
   <button class="bigbtn" id="btnMotion" style="display:none">ENABLE MOTION SENSORS</button>
   <div id="armState"></div>
   <div id="phoneInstr" style="display:none">
@@ -212,21 +222,22 @@
     var hud = document.getElementById('hud');
     var stateMsg = document.getElementById('stateMsg');
     var bigMsg = document.getElementById('bigMsg');
-    var conn = null;
+    var conn = null;            // the ACTIVE player's connection (kept in sync with activeIdx)
+    // ---------- multiplayer roster ----------
+    var PCOL    = [0xFF5A5F,0xFFC93C,0x2FBF71,0x8a53d6,0x6fd3ff,0x23A6D5,0xff9ec4,0xFDD64B];
+    var PCOLHEX = ['#FF5A5F','#FFC93C','#2FBF71','#8a53d6','#6fd3ff','#23A6D5','#ff9ec4','#FDD64B'];
+    var players = [];           // {conn,name,char,color,colHex,ballPos,hs,holed,scores[],total,club,marker}
+    var activeIdx = 0;
 
     var peer = new Peer('gogolf-'+code, { debug:1 });
     peer.on('open', function(){ netStatus.textContent = 'Ready — waiting for your phone to scan.'; });
     peer.on('error', function(e){ netStatus.textContent = 'Connection error: '+e.type+' (refresh to retry)'; });
     peer.on('connection', function(c){
-      conn = c;
       c.on('open', function(){
-        document.getElementById('connectPanel').style.display='none';
-        stateMsg.textContent = 'Phone connected — tap READY on your phone, then swing';
+        stateMsg.textContent = 'Phone connected — enter your name on the phone';
       });
-      c.on('data', onData);
-      c.on('close', function(){
-        stateMsg.textContent='Phone disconnected — refresh to restart';
-      });
+      c.on('data', function(msg){ onData(msg, c); });
+      c.on('close', function(){ removePlayer(c); });
     });
 
     /* ---------- three.js scene ---------- */
@@ -427,6 +438,54 @@
     flagsGroup.visible = false;
     scene.add(flagsGroup);
     var score = 0, shots = 0;
+
+    /* ---------- putting green (putt mode) ---------- */
+    var puttGroup = new THREE.Group();
+    var pGreen = new THREE.Mesh(new THREE.CircleGeometry(1, 48),
+      new THREE.MeshLambertMaterial({ color:0x54c268 }));
+    pGreen.rotation.x = -Math.PI/2; pGreen.scale.set(24, 44, 1);
+    pGreen.position.set(0, .02, -20); pGreen.receiveShadow = true; puttGroup.add(pGreen);
+    var pFringe = new THREE.Mesh(new THREE.RingGeometry(1, 1.06, 60),
+      new THREE.MeshLambertMaterial({ color:0x3fa552, side:THREE.DoubleSide }));
+    pFringe.rotation.x = -Math.PI/2; pFringe.scale.set(24, 44, 1);
+    pFringe.position.set(0, .015, -20); puttGroup.add(pFringe);
+    var pCup = new THREE.Mesh(new THREE.CylinderGeometry(.35,.35,.09,18),
+      new THREE.MeshLambertMaterial({ color:0x0c0c0c }));
+    pCup.position.y = .045; puttGroup.add(pCup);
+    var pPin = makeFlagPole(0xffe066); puttGroup.add(pPin);
+    puttGroup.visible = false; scene.add(puttGroup);
+    var puttMakes = 0, puttTries = 0, puttDistYd = 0;
+    function newPuttTarget(){
+      var dists = [6, 10, 15, 22, 30];
+      puttDistYd = dists[Math.floor(Math.random() * dists.length)];
+      cupPos.set((Math.random()-.5) * 9, 0, -puttDistYd * YD);
+      pCup.position.set(cupPos.x, .045, cupPos.z);
+      pPin.position.set(cupPos.x, 0, cupPos.z);
+      ball.position.set(BALL_HOME.x, .27, BALL_HOME.z);
+      vel.set(0,0,0); flying = false; sunk = false;
+      placeRig(ball.position, cupPos);
+      stateMsg.textContent = '⛳ Putting green · ' + puttDistYd + ' yds — sink it!';
+      hud.innerHTML = 'PUTTING GREEN<br>made: ' + puttMakes + ' / ' + puttTries;
+    }
+    function endPutt(traveled){
+      puttTries++;
+      if (sunk){
+        puttMakes++;
+        sfx('drop'); setTimeout(function(){ sfx('cheer'); }, 200);
+        bigMsg.innerHTML = '🎉 SUNK IT!<br><span style="font-size:30px;color:#eaffea">' + puttMakes + ' made · ' + puttTries + ' putts</span>';
+        bigMsg.style.display = 'block';
+        sendTo(conn, { t:'result', yards: traveled, line2: 'Sunk it! ' + puttMakes + ' made' });
+        setTimeout(function(){ if (mode === 'putt'){ bigMsg.style.display = 'none'; newPuttTarget(); } }, 1600);
+      } else {
+        var left = Math.round(ball.position.distanceTo(cupPos) / YD);
+        placeRig(ball.position, cupPos);
+        bigMsg.innerHTML = left + ' YD LEFT<br><span style="font-size:26px">tap READY, finish it</span>';
+        bigMsg.style.display = 'block';
+        stateMsg.textContent = '⛳ ' + left + ' yds left — tap READY';
+        sendTo(conn, { t:'result', yards: traveled, line2: left + ' yds left' });
+      }
+      hud.innerHTML = 'PUTTING GREEN<br>made: ' + puttMakes + ' / ' + puttTries;
+    }
 
     /* ---------- COURSE ONE (course mode) ---------- */
     // Three holes. All shapes are axis-aligned ellipses {x, z, rx, rz}.
@@ -649,6 +708,7 @@
       stateMsg.textContent = 'Hole ' + (i+1) + ' "' + curHole.name + '" · Par ' + curHole.par + ' · ' + toPin +
         ' yds · wind ' + windText() + ' — tap READY';
       updateCourseHud();
+      startFlyover();
     }
     function windText(){
       if (windSpd < .7) return 'calm';
@@ -724,6 +784,36 @@
         trailGeo.setDrawRange(0, trailCount);
         trailGeo.attributes.position.needsUpdate = true;
       }
+    }
+
+    // ---- sand burst: a spray of grains kicked up on bunker shots ----
+    var SAND_N = 64;
+    var sandGeo = new THREE.BufferGeometry();
+    var sandPos = new Float32Array(SAND_N * 3);
+    var sandVel = [], sandLife = new Float32Array(SAND_N);
+    for (var _si = 0; _si < SAND_N; _si++) sandVel.push(new THREE.Vector3());
+    sandGeo.setAttribute('position', new THREE.BufferAttribute(sandPos, 3));
+    var sandMat = new THREE.PointsMaterial({ color:0xe7cd93, size:.24, transparent:true, opacity:.95, depthWrite:false });
+    var sandPts = new THREE.Points(sandGeo, sandMat);
+    sandPts.frustumCulled = false; sandPts.visible = false; scene.add(sandPts);
+    function spawnSand(pos){
+      for (var i = 0; i < SAND_N; i++){
+        sandLife[i] = .45 + Math.random() * .5;
+        var a = Math.random() * Math.PI * 2, sp = 1.5 + Math.random() * 3.5;
+        sandVel[i].set(Math.cos(a) * sp * .55, 3.2 + Math.random() * 4.5, Math.sin(a) * sp * .55);
+        sandPos[i*3] = pos.x + (Math.random()-.5)*.3;
+        sandPos[i*3+1] = pos.y + .05;
+        sandPos[i*3+2] = pos.z + (Math.random()-.5)*.3;
+      }
+      sandPts.visible = true;
+      sandGeo.attributes.position.needsUpdate = true;
+    }
+
+    // ---- hole flyover: a quick cinematic glide from the cup back to the tee ----
+    var flyover = null;
+    function startFlyover(){
+      if (mode !== 'course' || !curHole) return;
+      flyover = { t0: performance.now(), dur: 2600 };
     }
 
     // aim arrow on the ground, pivoting around the ball (rig-local)
@@ -974,16 +1064,25 @@
     var modeBtn = document.getElementById('modeBtn');
     function setMode(m){
       mode = m;
+      var _cp = document.getElementById('connectPanel'); if (_cp) _cp.style.display='none';
       flagsGroup.visible = (m === 'flags');
       courseGroup.visible = (m === 'course');
-      rangeGroup.visible = (m !== 'course');
+      puttGroup.visible = (m === 'putt');
+      rangeGroup.visible = (m === 'range' || m === 'flags');
       modeBtn.textContent = 'MODE: ' + m.toUpperCase();
       bigMsg.style.display = 'none';
+      hideScorecard();
       flying = false; vel.set(0,0,0);
       if (m === 'flags'){ score = 0; shots = 0; }
       if (m === 'course'){
         holeIdx = 0; totalStrokes = 0; holesDone = 0; roundOver = false;
+        players.forEach(function(p){ p.scores = []; p.total = 0; p.hs = 0; p.holed = false; });
         buildHole(0);
+        startHoleTurns();
+      } else if (m === 'putt'){
+        puttMakes = 0; puttTries = 0;
+        newPuttTarget();
+        broadcastTurn();
       } else {
         ball.position.copy(BALL_HOME);
         placeRigDefault();
@@ -991,11 +1090,18 @@
           ? 'Flags mode — closest to the pin scores points!'
           : 'Range mode — swing away';
         hud.innerHTML = 'connected';
+        broadcastTurn();
       }
+      renderStandings();
     }
     modeBtn.addEventListener('click', function(){
-      setMode(mode === 'range' ? 'flags' : (mode === 'flags' ? 'course' : 'range'));
+      var order = ['range','flags','course','putt'];
+      setMode(order[(order.indexOf(mode) + 1) % order.length]);
     });
+    var startBtn = document.getElementById('startBtn');
+    if (startBtn) startBtn.addEventListener('click', function(){ setMode('course'); });
+    var rangeBtn = document.getElementById('rangeBtn');
+    if (rangeBtn) rangeBtn.addEventListener('click', function(){ setMode('range'); });
 
     /* ---------- controller state ---------- */
     var armed = false;
@@ -1003,8 +1109,18 @@
     var clubA = 0;        // smoothed club angle
     var aimDeg = 0;       // aim relative to the target line: negative = left
 
-    function onData(msg){
+    function onData(msg, c){
       if (!msg || !msg.t) return;
+      if (msg.t === 'join'){ registerPlayer(c, msg.name, msg.char); return; }
+      var p = c ? playerByConn(c) : players[activeIdx];
+      if (mode === 'course'){
+        // turn-based: only the active player drives the ball, and not after they've holed
+        if (!p || players[activeIdx] !== p || p.holed) return;
+      } else if (c){
+        // range / flags: whoever acts controls the shared ball; reply routes back to them
+        conn = c;
+        if (p) activeIdx = players.indexOf(p);
+      }
       if (msg.t === 'orient'){
         if (mode === 'course') updateCourseHud();
         else hud.innerHTML = (mode === 'flags' ? 'SCORE ' + score + ' · shots ' + shots + '<br>' : '') +
@@ -1032,6 +1148,7 @@
       }
       else if (msg.t === 'club'){
         curClub = msg.v || 'driver';
+        if (p) p.club = curClub;
         stateMsg.textContent = 'Club: ' + (curClub === 'putter' ? 'Putter' : (CLUBS[curClub]||CLUBS.driver).label);
       }
       else if (msg.t === 'aim'){
@@ -1044,28 +1161,242 @@
     // hook for automated testing from the console
     window._gg = {
       onData: onData,
+      // headless multiplayer test helpers
+      fast: function(){ TURN_DELAY = 30; HOLE_DELAY = 30; },
+      join: function(name, char){ var c = { send:function(){}, __fake:true }; registerPlayer(c, name || ('Bot'+(players.length+1)), char || 'pencil'); return players.length-1; },
+      turn: function(){ return players[activeIdx] ? players[activeIdx].name : null; },
+      setClub: function(v){ curClub = v; if (players[activeIdx]) players[activeIdx].club = v; },
+      nearCup: function(){ // test hook: drop the active ball a short putt from the cup
+        var d = 0.35 * 0.9144;
+        ball.position.set(cupPos.x + d, .27, cupPos.z);
+        if (players[activeIdx]) players[activeIdx].ballPos.copy(ball.position);
+        placeRig(ball.position, cupPos);
+      },
+      hit: function(power){ // resolve the active player's shot end-to-end, synchronously
+        if (!players.length) return 'no players';
+        armed = true; launch(power || 40);
+        var guard = 0;
+        while (flying && guard++ < 6000) stepPhysics(1/60);
+        return players[activeIdx] ? players[activeIdx].name : null;
+      },
       state: function(){ return { mode: mode, holeIdx: holeIdx, strokes: strokes,
-        totalStrokes: totalStrokes, holesDone: holesDone, roundOver: roundOver,
+        activeIdx: activeIdx, turn: players[activeIdx] ? players[activeIdx].name : null,
+        roundOver: roundOver, totalStrokes: totalStrokes, holesDone: holesDone,
+        players: players.map(function(p){ return { name:p.name, hs:p.hs, holed:p.holed, total:p.total,
+          scores:p.scores.slice(), toPin:+(p.ballPos.distanceTo(cupPos)/YD).toFixed(1) }; }),
         ball: { x:+ball.position.x.toFixed(1), y:+ball.position.y.toFixed(1), z:+ball.position.z.toFixed(1) },
         flying: flying, toPin: mode==='course' ? +(ball.position.distanceTo(cupPos)/YD).toFixed(1) : null }; },
       setMode: setMode,
       render: function(){ renderer.render(scene, camera); }
     };
 
+    /* ================= multiplayer turn engine ================= */
+    var TURN_DELAY = 2200, HOLE_DELAY = 3200, turnTimer = null;
+    function esc(s){ return String(s).replace(/[&<>"]/g, function(ch){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]; }); }
+    function playerByConn(c){ for (var i=0;i<players.length;i++) if (players[i].conn === c) return players[i]; return null; }
+    function makeMarker(color){
+      var g = new THREE.Group();
+      var s = new THREE.Mesh(new THREE.SphereGeometry(.3,14,14), new THREE.MeshLambertMaterial({ color:color }));
+      s.castShadow = true; s.position.y = .3; g.add(s);
+      var ring = new THREE.Mesh(new THREE.TorusGeometry(.55,.07,8,20), new THREE.MeshBasicMaterial({ color:color }));
+      ring.rotation.x = -Math.PI/2; ring.position.y = .05; g.add(ring);
+      g.visible = false; return g;
+    }
+    function sendTo(c, msg){ try { if (c && c.send) c.send(msg); } catch(e){} }
+    function registerPlayer(c, name, char){
+      var ex = playerByConn(c);
+      if (ex){ if (name) ex.name = name; if (char) ex.char = char; renderStandings(); buildLobby(); broadcastTurn(); return ex; }
+      var idx = players.length;
+      var p = { conn:c, name:(name || ('Player '+(idx+1))), char:(char||'pencil'),
+        color:PCOL[idx%PCOL.length], colHex:PCOLHEX[idx%PCOLHEX.length],
+        ballPos:new THREE.Vector3().copy(BALL_HOME), hs:0, holed:false, scores:[], total:0, club:'driver', marker:null };
+      p.marker = makeMarker(p.color); scene.add(p.marker);
+      // late joiner during a live round sits out the current hole, joins next hole
+      if (mode === 'course' && !roundOver) p.holed = true;
+      players.push(p);
+      stateMsg.textContent = p.name + ' joined! (' + players.length + ' playing)';
+      if (players.length === 1 && mode !== 'course'){ activeIdx = 0; conn = c; }
+      renderStandings(); buildLobby();
+      if (mode === 'course') updateMarkers();
+      broadcastTurn();
+      return p;
+    }
+    function removePlayer(c){
+      var p = playerByConn(c); if (!p) return;
+      var i = players.indexOf(p);
+      if (p.marker) scene.remove(p.marker);
+      var wasActive = (i === activeIdx);
+      players.splice(i, 1);
+      if (activeIdx >= players.length) activeIdx = Math.max(0, players.length - 1);
+      stateMsg.textContent = esc(p.name) + ' left';
+      renderStandings(); buildLobby();
+      conn = players[activeIdx] ? players[activeIdx].conn : null;
+      if (mode === 'course' && players.length && wasActive){ advanceTurn(); }
+      else updateMarkers();
+    }
+    function broadcastTurn(){
+      var act = players[activeIdx];
+      players.forEach(function(p, i){
+        var mine = (mode !== 'course') || (i === activeIdx);
+        sendTo(p.conn, { t:'turn', your:mine, who: act ? act.name : '', mode:mode });
+      });
+    }
+    function updateMarkers(){
+      for (var i=0;i<players.length;i++){
+        var p = players[i]; if (!p.marker) continue;
+        var show = (mode === 'course') && (i !== activeIdx) && !p.holed;
+        p.marker.visible = show;
+        if (show) p.marker.position.set(p.ballPos.x, 0, p.ballPos.z);
+      }
+    }
+    function beginTurn(){
+      if (!players.length) return;
+      activeIdx = ((activeIdx % players.length) + players.length) % players.length;
+      var p = players[activeIdx];
+      conn = p.conn;
+      curClub = p.club || 'driver';
+      if (mode === 'course'){
+        ball.position.copy(p.ballPos);
+        strokes = p.hs;
+        vel.set(0,0,0); flying = false; sunk = false; drowned = false;
+        bigMsg.style.display = 'none';
+        placeRig(ball.position, cupPos);
+        var toPin = Math.round(ball.position.distanceTo(cupPos)/YD);
+        stateMsg.textContent = '⛳ ' + p.name + "'s turn — " + toPin + ' yds to pin · tap READY';
+        updateCourseHud();
+      }
+      updateMarkers();
+      renderStandings();
+      broadcastTurn();
+    }
+    function advanceTurn(){
+      if (mode !== 'course') return;
+      var anyLive = false, best = -1, bd = -1;
+      for (var i=0;i<players.length;i++){
+        if (players[i].holed) continue;
+        anyLive = true;
+        var d = players[i].ballPos.distanceTo(cupPos);
+        if (d > bd){ bd = d; best = i; }
+      }
+      if (!anyLive){ finishHole(); return; }
+      activeIdx = best;
+      beginTurn();
+    }
+    function nextTurnSoon(){
+      clearTimeout(turnTimer);
+      turnTimer = setTimeout(function(){ if (mode==='course' && !roundOver) advanceTurn(); }, TURN_DELAY);
+    }
+    function startHoleTurns(){
+      players.forEach(function(p){ p.hs = 0; p.holed = false; p.ballPos.copy(BALL_HOME); });
+      if (!players.length) return;
+      activeIdx = 0;
+      beginTurn();
+    }
+    function holeSummary(){
+      return players.slice().sort(function(a,b){ return (a.scores[holeIdx]||99)-(b.scores[holeIdx]||99); })
+        .map(function(p){ return esc(p.name) + ' ' + (p.scores[holeIdx]!=null ? p.scores[holeIdx] : '-'); }).join('  ·  ');
+    }
+    function finishHole(){
+      holesDone = holeIdx + 1;
+      renderStandings();
+      if (holeIdx >= courseData.length - 1){
+        roundOver = true;
+        showFinalScorecard();
+      } else {
+        var nextHole = holeIdx + 1;
+        bigMsg.innerHTML = 'HOLE ' + (holeIdx+1) + ' DONE<br><span style="font-size:26px;color:#eaffea">' + holeSummary() + '</span>';
+        bigMsg.style.display = 'block';
+        clearTimeout(turnTimer);
+        turnTimer = setTimeout(function(){
+          if (mode !== 'course' || roundOver) return;
+          holeIdx = nextHole; buildHole(holeIdx); startHoleTurns();
+        }, HOLE_DELAY);
+      }
+    }
+    function restartRound(){
+      roundOver = false; holeIdx = 0; totalStrokes = 0; holesDone = 0;
+      players.forEach(function(p){ p.scores = []; p.total = 0; p.hs = 0; p.holed = false; });
+      hideScorecard();
+      buildHole(0); startHoleTurns();
+    }
+    function renderStandings(){
+      var el = document.getElementById('standings'); if (!el) return;
+      if (mode !== 'course' || !players.length){ el.style.display = 'none'; return; }
+      el.style.display = 'block';
+      var rows = players.map(function(p, i){
+        var thru = p.scores.length;
+        var rel = p.total - coursePar(thru);
+        var relTxt = thru ? ' (' + relScoreText(rel) + ')' : '';
+        return '<div style="display:flex;align-items:center;gap:8px;margin-top:5px;' + (i===activeIdx?'font-weight:900':'') + '">' +
+          '<span style="width:12px;height:12px;border-radius:50%;background:' + p.colHex + ';border:2px solid #10233F"></span>' +
+          '<span style="flex:1;white-space:nowrap">' + (i===activeIdx?'► ':'') + esc(p.name) + (p.holed?' ✓':'') + '</span>' +
+          '<span style="opacity:.65;font-size:12px">thru ' + thru + '</span>' +
+          '<span style="min-width:44px;text-align:right">' + (p.total||0) + relTxt + '</span></div>';
+      }).join('');
+      el.innerHTML = '<div style="font-weight:900;font-size:13px;letter-spacing:.05em">LEADERBOARD</div>' + rows;
+    }
+    function buildLobby(){
+      var el = document.getElementById('lobbyList'); if (!el) return;
+      var btn = document.getElementById('startBtn'), rb = document.getElementById('rangeBtn');
+      if (!players.length){ el.innerHTML = ''; if (btn) btn.style.display='none'; if (rb) rb.style.display='none'; return; }
+      el.innerHTML = players.map(function(p){
+        return '<span style="display:inline-flex;align-items:center;gap:7px;background:#fff;color:#10233F;border:3px solid #10233F;border-radius:100px;padding:7px 15px;margin:5px;font-weight:800;box-shadow:0 3px 0 rgba(16,35,63,.25)">' +
+          '<span style="width:13px;height:13px;border-radius:50%;background:' + p.colHex + '"></span>' + esc(p.name) + '</span>';
+      }).join('');
+      if (btn) btn.style.display = 'inline-block';
+      if (rb) rb.style.display = 'inline-block';
+    }
+    function hideScorecard(){ var el = document.getElementById('scorecard'); if (el) el.style.display='none'; }
+    function showFinalScorecard(){
+      var ranked = players.slice().sort(function(a,b){ return a.total - b.total; });
+      var winner = ranked[0], par = coursePar(courseData.length);
+      if (winner){
+        try {
+          var oldRec = +localStorage.getItem('gogolf_best_round') || null;
+          if (!oldRec || winner.total < oldRec) localStorage.setItem('gogolf_best_round', winner.total);
+        } catch(e){}
+      }
+      var head = '<tr><th style="text-align:left;padding:5px 8px">Player</th>';
+      for (var h=0;h<courseData.length;h++) head += '<th style="padding:5px 7px">' + (h+1) + '</th>';
+      head += '<th style="padding:5px 8px">Tot</th><th style="padding:5px 8px">+/-</th></tr>';
+      var body = ranked.map(function(p, r){
+        var cells = '';
+        for (var h=0;h<courseData.length;h++) cells += '<td style="padding:5px 7px;text-align:center">' + (p.scores[h]!=null?p.scores[h]:'-') + '</td>';
+        var rel = p.total - par;
+        return '<tr style="' + (r===0?'font-weight:900;background:rgba(255,201,60,.3)':'') + '">' +
+          '<td style="padding:5px 8px;white-space:nowrap"><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:' + p.colHex + ';margin-right:7px"></span>' +
+          (r===0?'🏆 ':'') + esc(p.name) + '</td>' + cells +
+          '<td style="padding:5px 8px;text-align:center">' + p.total + '</td>' +
+          '<td style="padding:5px 8px;text-align:center">' + relScoreText(rel) + '</td></tr>';
+      }).join('');
+      var el = document.getElementById('scorecard');
+      if (el){
+        el.innerHTML = '<div style="font-family:Fredoka,sans-serif;font-weight:700;font-size:34px;margin-bottom:6px">🏁 ROUND COMPLETE</div>' +
+          (winner ? '<div style="font-size:20px;margin-bottom:14px">Winner: <b>' + esc(winner.name) + '</b> · ' + winner.total + ' (' + relScoreText(winner.total-par) + ')</div>' : '') +
+          '<table style="border-collapse:collapse;margin:0 auto;font-size:15px">' + head + body + '</table>' +
+          '<div style="font-size:14px;margin-top:16px;opacity:.85">tap READY on any phone to play again</div>';
+        el.style.display = 'block';
+      }
+      stateMsg.textContent = 'Round over — tap READY for a new round';
+      broadcastTurn();
+    }
+
     function resetForShot(){
       bigMsg.style.display = 'none';
       vel.set(0,0,0); flying = false;
       if (mode === 'course'){
-        if (roundOver){ // fresh round
-          holeIdx = 0; totalStrokes = 0; holesDone = 0; roundOver = false;
-          buildHole(0);
-        }
+        if (roundOver){ restartRound(); return; }
         placeRig(ball.position, cupPos);
         var toPin = Math.round(ball.position.distanceTo(cupPos)/YD);
+        var who = players[activeIdx] ? players[activeIdx].name + ' · ' : '';
         stateMsg.textContent = onGreenNow()
-          ? '⛳ Putting · ' + toPin + ' yds — nice and smooth!'
-          : 'Hole ' + (holeIdx+1) + ' · ' + toPin + ' yds to pin — swing when ready!';
+          ? '⛳ ' + who + 'Putting · ' + toPin + ' yds — smooth!'
+          : who + 'Hole ' + (holeIdx+1) + ' · ' + toPin + ' yds to pin — swing!';
         updateCourseHud();
+      } else if (mode === 'putt'){
+        placeRig(ball.position, cupPos);
+        var lft = Math.round(ball.position.distanceTo(cupPos) / YD);
+        stateMsg.textContent = '⛳ ' + lft + ' yds — smooth stroke!';
       } else {
         ball.position.copy(BALL_HOME);
         placeRigDefault();
@@ -1081,6 +1412,7 @@
     // Calibrated from Brecken's swings; nudged down again per feedback.
     var E_MIN = 18, E_SPAN = 40;
     function onGreenNow(){
+      if (mode === 'putt') return true;
       if (mode !== 'course' || !curHole) return false;
       if (inRegion(curHole.bunkers, ball.position.x, ball.position.z)) return false; // sand is never green
       var dx = ball.position.x - cupPos.x, dz = ball.position.z - cupPos.z;
@@ -1132,6 +1464,7 @@
       flying = true; sunk = false; pinHitSfx = false; drowned = false;
       trailCount = 0; trailGeo.setDrawRange(0, 0); // fresh trail each shot
       sfx(putting ? 'putt' : 'hit');
+      if (sandLie) spawnSand(ball.position);
       stateMsg.textContent = (putting ? 'Putt' : (CLUBS[curClub]||CLUBS.driver).label) +
         (sandLie ? ' from the sand' : '') + ': ' +
         Math.round(p*100) + '%  (energy ' + power.toFixed(0) + ')';
@@ -1142,6 +1475,7 @@
       flying = false;
       var traveled = Math.round(horizDist(shotStart, ball.position) / YD);
       if (mode === 'course'){ endCourseShot(traveled); return; }
+      if (mode === 'putt'){ endPutt(traveled); return; }
       if (mode === 'flags'){
         var best = null, bestD = 1e9;
         flags.forEach(function(fl){
@@ -1169,6 +1503,8 @@
     }
 
     function endCourseShot(traveled){
+      var p = players[activeIdx] || null;
+      var pre = p ? esc(p.name) + ' — ' : '';
       var bx = ball.position.x, bz = ball.position.z;
       var inWater = drowned || inRegion(curHole.water, bx, bz);
       var oob = Math.abs(bx) > 70 || bz > 15 || bz < cupPos.z - 90;
@@ -1176,66 +1512,50 @@
         sfx(inWater ? 'splash' : 'ob');
         strokes++; // penalty stroke
         ball.position.copy(preShot);
-        placeRig(ball.position, cupPos);
-        bigMsg.innerHTML = (inWater ? '💦 SPLASH!' : '🌲 OUT OF BOUNDS!') +
+        if (p){ p.hs = strokes; p.ballPos.copy(ball.position); }
+        bigMsg.innerHTML = pre + (inWater ? '💦 SPLASH!' : '🌲 OUT OF BOUNDS!') +
           '<br><span style="font-size:30px">+1 penalty — replay from your last spot</span>';
         bigMsg.style.display='block';
-        stateMsg.textContent = 'Tap READY on your phone';
-        updateCourseHud();
-        if (conn) conn.send({ t:'result', yards: traveled, line2: (inWater?'Splash! ':'OB! ') + '+1 penalty' });
+        stateMsg.textContent = 'Splash! next up…';
+        updateCourseHud(); renderStandings();
+        sendTo(conn, { t:'result', yards: traveled, line2: (inWater?'Splash! ':'OB! ') + '+1 penalty' });
+        nextTurnSoon();
         return;
       }
       var toCup = ball.position.distanceTo(cupPos);
       if (sunk || toCup < 1.2){
-        // in the cup, or a tap-in — either way, show it IN the hole
+        // in the cup, or a tap-in — show it IN the hole
         ball.position.set(cupPos.x, -.06, cupPos.z);
         var rel = strokes - curHole.par;
         var resultName = (strokes === 1) ? '🎯 ACE!!! HOLE IN ONE!' : parName(rel);
         sfx('drop');
         if (rel < 0 || strokes === 1) setTimeout(function(){ sfx('cheer'); }, 300);
-        totalStrokes += strokes;
-        holesDone = holeIdx + 1;
-        var relTotal = totalStrokes - coursePar(holesDone);
-        if (holeIdx >= courseData.length - 1){
-          roundOver = true;
-          var oldRec = null;
-          try { oldRec = +localStorage.getItem('gogolf_best_round') || null; } catch(e){}
-          var newRec = !oldRec || totalStrokes < oldRec;
-          if (newRec){ try { localStorage.setItem('gogolf_best_round', totalStrokes); } catch(e){} }
-          bigMsg.innerHTML = resultName + '<br><span style="font-size:36px">🏆 ROUND COMPLETE</span>' +
-            (newRec ? '<br><span style="font-size:30px;color:#FFC93C">⭐ NEW COURSE RECORD!</span>' : '') +
-            '<br><span style="font-size:30px;color:#eaffea">' + totalStrokes + ' strokes (' + relScoreText(relTotal) + ')' +
-            (!newRec && oldRec ? ' · record ' + oldRec : '') + '</span>' +
-            '<br><span style="font-size:20px;color:#c9e8c9">tap READY to play again</span>';
-          stateMsg.textContent = 'Round over — tap READY for a new round';
-          if (conn) conn.send({ t:'result', yards: traveled, line2: 'Round: ' + totalStrokes + ' (' + relScoreText(relTotal) + ')' });
-        } else {
-          bigMsg.innerHTML = resultName +
-            '<br><span style="font-size:30px;color:#eaffea">' + strokes + ' strokes · round ' + relScoreText(relTotal) + '</span>';
-          if (conn) conn.send({ t:'result', yards: traveled, line2: resultName });
-          holeIdx++;
-          setTimeout(function(){
-            if (mode === 'course' && !roundOver) buildHole(holeIdx);
-          }, 2600);
-        }
+        if (p){ p.hs = strokes; p.holed = true; p.scores[holeIdx] = strokes; p.total += strokes; p.ballPos.copy(cupPos); }
+        totalStrokes += strokes; // legacy single-player HUD continuity
+        bigMsg.innerHTML = pre + resultName +
+          '<br><span style="font-size:30px;color:#eaffea">holed in ' + strokes + (rel ? ' · ' + relScoreText(rel) : '') + '</span>';
         bigMsg.style.display='block';
+        stateMsg.textContent = resultName;
+        updateCourseHud(); renderStandings();
+        sendTo(conn, { t:'result', yards: traveled, line2: resultName + ' — in ' + strokes });
+        nextTurnSoon();
         return;
       }
-      // ball in play — walk to it
+      // ball still in play — save it and pass the turn on
+      if (p){ p.hs = strokes; p.ballPos.copy(ball.position); }
       placeRig(ball.position, cupPos);
       var toPin = Math.round(toCup / YD);
       var onGreen = toCup < curHole.greenR;
       var inSandRest = inRegion(curHole.bunkers, bx, bz);
-      bigMsg.innerHTML = traveled + ' YARDS<br><span style="font-size:30px">' +
+      bigMsg.innerHTML = pre + traveled + ' YDS<br><span style="font-size:30px">' +
         (inSandRest ? '🏖️ IN THE BUNKER — ' : (onGreen ? '🟢 on the green — ' : '')) +
         toPin + ' yds to the pin</span>';
       bigMsg.style.display='block';
-      stateMsg.textContent = inSandRest
-        ? 'Tap READY — and grab the WEDGE'
-        : 'Tap READY on your phone' + (onGreen ? ' — easy does it' : '');
-      updateCourseHud();
-      if (conn) conn.send({ t:'result', yards: traveled,
+      stateMsg.textContent = inSandRest ? 'Bunker! next up…' : 'Next up…';
+      updateCourseHud(); renderStandings();
+      sendTo(conn, { t:'result', yards: traveled,
         line2: (inSandRest ? 'Bunker! use WDG · ' : '') + toPin + ' yds to pin' });
+      nextTurnSoon();
     }
 
     var last = performance.now();
@@ -1293,7 +1613,7 @@
         }
       }
       // the cup and the pin are real: slow balls drop in, fast ones clang off the flag
-      if (mode === 'course' && flying && ball.position.y <= .55){
+      if ((mode === 'course' || mode === 'putt') && flying && ball.position.y <= .55){
         var dxc = ball.position.x - cupPos.x, dzc = ball.position.z - cupPos.z;
         var dc = Math.sqrt(dxc*dxc + dzc*dzc);
         var sp = vel.length();
@@ -1361,6 +1681,25 @@
                         ball.position.y > .4;
       if (flying) trailPush();
 
+      // sand grains: ballistic, settle onto the ground, then fade out
+      if (sandPts.visible){
+        var anyGrain = false, minLife = 0;
+        for (var gi = 0; gi < SAND_N; gi++){
+          if (sandLife[gi] > 0){
+            anyGrain = true;
+            sandLife[gi] -= dt;
+            if (sandLife[gi] > minLife) minLife = sandLife[gi];
+            sandVel[gi].y -= 13 * dt;
+            sandPos[gi*3]   += sandVel[gi].x * dt;
+            sandPos[gi*3+1]  = Math.max(.02, sandPos[gi*3+1] + sandVel[gi].y * dt);
+            sandPos[gi*3+2] += sandVel[gi].z * dt;
+          }
+        }
+        sandMat.opacity = Math.max(0, Math.min(.95, minLife * 2));
+        sandGeo.attributes.position.needsUpdate = true;
+        if (!anyGrain) sandPts.visible = false;
+      }
+
       if (flying){
         // substep so the simulation keeps up with real time even if frames
         // are slow or the tab is throttled in the background
@@ -1371,6 +1710,26 @@
           rem -= sub;
         }
         camera.lookAt(ball.position.x, Math.max(ball.position.y,1), ball.position.z);
+      } else if (flyover){
+        // cinematic glide: high over the cup → down behind the tee
+        var ft = (now - flyover.t0) / flyover.dur;
+        if (ft >= 1){ flyover = null; camera.lookAt(camLook); }
+        else {
+          var fe = ft < .5 ? 2*ft*ft : 1 - Math.pow(-2*ft+2, 2)/2; // easeInOut
+          var csx = cupPos.x, csz = cupPos.z;
+          camera.position.set(
+            csx + (BALL_HOME.x - csx) * fe,
+            34 + (7 - 34) * fe,
+            (csz - 26) + ((BALL_HOME.z + 12) - (csz - 26)) * fe
+          );
+          var lk = new THREE.Vector3(
+            csx + (csx * .3 - csx) * fe,
+            0 + (1.2 - 0) * fe,
+            csz + (csz * .6 - csz) * fe
+          );
+          camera.lookAt(lk);
+          camLook.copy(lk);
+        }
       } else {
         // glide, don't teleport: ease toward the next address position
         var ease = 1 - Math.exp(-dt * 2.4);
@@ -1419,26 +1778,58 @@
     document.getElementById('btnAimL').addEventListener('click', function(){ aim = Math.max(-30, aim - 3); sendAim(); });
     document.getElementById('btnAimR').addEventListener('click', function(){ aim = Math.min(30, aim + 3); sendAim(); });
 
+    var nameInput = document.getElementById('nameInput');
+    var turnBanner = document.getElementById('turnBanner');
+    var myTurn = true;
+    var myName = '';
+    try { myName = localStorage.getItem('gogolf_name') || ''; } catch(e){}
+    if (nameInput) nameInput.value = myName;
+    var myChar = 'pencil';
+    try { myChar = localStorage.getItem('gogames_character') || 'pencil'; } catch(e){}
+    function sendJoin(){
+      if (nameInput) myName = nameInput.value.trim() || myName;
+      try { localStorage.setItem('gogolf_name', myName); } catch(e){}
+      if (conn && connected) conn.send({ t:'join', name: myName || 'Player', char: myChar });
+    }
+    if (nameInput) nameInput.addEventListener('input', function(){ sendJoin(); });
+
     var conn = null, connected = false;
     var peer = new Peer({ debug:1 });
     peer.on('open', function(){
       conn = peer.connect('gogolf-'+code, { reliable:true });
       conn.on('open', function(){
         connected = true;
-        status.textContent = 'Connected to laptop ✔';
+        status.textContent = 'Connected ✔ — type your name';
+        if (nameInput) nameInput.style.display = 'block';
         btnMotion.style.display='block';
+        sendJoin();
       });
       conn.on('data', function(msg){
         if (msg && msg.t==='ctx'){
           sensitive = !!msg.sg; // short game: listen for gentle strokes
           if (armed) armState.textContent = sensitive ? '🟢 ARMED — soft touch!' : '🟢 ARMED — swing!';
         }
+        if (msg && msg.t==='turn'){
+          myTurn = !!msg.your;
+          turnBanner.style.display = 'block';
+          if (myTurn){
+            turnBanner.style.color = '#eaffea';
+            turnBanner.textContent = (msg.mode === 'course') ? '⛳ YOUR TURN!' : '🏌️ Swing away!';
+            if (!swinging) btnArm.disabled = false;
+            if (navigator.vibrate && msg.mode === 'course') navigator.vibrate([80,60,80]);
+          } else {
+            turnBanner.style.color = 'rgba(255,255,255,.8)';
+            turnBanner.textContent = '⏳ ' + (msg.who || 'Someone') + "'s turn…";
+            btnArm.disabled = true;
+            armState.textContent = '';
+          }
+        }
         if (msg && msg.t==='result'){
           result.innerHTML = msg.yards + ' yds' + (msg.pts ? ' · <span style="color:#7CFC00">+' + msg.pts + '</span>' : '') +
             (msg.score !== undefined ? '<br><span style="font-size:18px;color:#c9e8c9">score ' + msg.score + '</span>' : '') +
             (msg.line2 ? '<br><span style="font-size:18px;color:#c9e8c9">' + msg.line2 + '</span>' : '');
           armState.textContent = '';
-          btnArm.disabled = false;
+          if (myTurn) btnArm.disabled = false;
           if (navigator.vibrate) navigator.vibrate(120);
         }
       });
