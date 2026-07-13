@@ -113,17 +113,17 @@
     background:#fff;color:#10233F;border:4px solid #10233F;border-radius:22px;padding:18px 22px;min-width:230px;
     box-shadow:0 10px 0 rgba(16,35,63,.25);">
     <div style="font-family:'Fredoka',sans-serif;font-weight:700;font-size:18px;margin-bottom:12px;">Settings</div>
-    <div style="font-size:13px;font-weight:800;color:#8895a7;margin-bottom:6px;">Choose your player · Desk League</div>
-    <div id="skinLabel" style="font-size:15px;font-weight:800;margin-bottom:8px;">✏️ Pencil Dude</div>
+    <div style="font-size:13px;font-weight:800;color:#8895a7;margin-bottom:6px;">Pick your colour · GoGo crew</div>
+    <div id="skinLabel" style="font-size:15px;font-weight:800;margin-bottom:8px;">🔴 Coral</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:14px;">
-      <button class="castBtn sel" data-char="pencil">✏️ Pencil Dude</button>
-      <button class="castBtn" data-char="fork">🍴 Fork Man</button>
-      <button class="castBtn" data-char="crayon">🖍️ Crayon Kid</button>
-      <button class="castBtn" data-char="highlighter">🖊️ Highlighter</button>
-      <button class="castBtn" data-char="mug">☕ Mug Shot</button>
-      <button class="castBtn" data-char="eraser">🩹 Big Eraser</button>
-      <button class="castBtn" data-char="sticky">📝 Sticky</button>
-      <button class="castBtn" data-char="glue">🧴 Glue Stick</button>
+      <button class="castBtn sel" data-char="pencil">🔴 Coral</button>
+      <button class="castBtn" data-char="fork">🟡 Sunny</button>
+      <button class="castBtn" data-char="crayon">🟢 Fern</button>
+      <button class="castBtn" data-char="highlighter">🔵 Sky</button>
+      <button class="castBtn" data-char="mug">🟣 Grape</button>
+      <button class="castBtn" data-char="eraser">🩷 Blossom</button>
+      <button class="castBtn" data-char="sticky">🟠 Butter</button>
+      <button class="castBtn" data-char="glue">🟦 Splash</button>
     </div>
     <div style="font-size:13px;font-weight:800;color:#8895a7;margin-bottom:6px;">Game mode</div>
     <button id="modeBtn" style="width:100%;font-family:'Nunito',sans-serif;font-size:15px;font-weight:900;padding:11px 0;border:3px solid #10233F;
@@ -962,15 +962,27 @@
       attachFace(g, 1.05, -.305, 1);
       return g;
     }
+    // ---- GoGo mascot: one squishy bean + signature sprout, re-skinned by colour ----
+    function makeGoGo(color){
+      var g = new THREE.Group(); var r=.55, h=1.0;
+      var cyl = part(new THREE.CylinderGeometry(r,r,h,24), color); cyl.position.y=r+h/2; g.add(cyl);
+      var top = part(new THREE.SphereGeometry(r,20,16), color); top.position.y=r+h; g.add(top);
+      var bot = part(new THREE.SphereGeometry(r,20,16), color); bot.position.y=r; g.add(bot);
+      makeShoes(g);
+      var stalk = part(new THREE.CylinderGeometry(.04,.05,.24,8), 0x2FBF71); stalk.position.y=r+h+r+.1; g.add(stalk);
+      [.12,-.12].forEach(function(lx){ var l=part(new THREE.SphereGeometry(.12,10,8), 0x36c977); l.scale.set(1.5,.55,1); l.rotation.z=lx>0?.5:-.5; l.position.set(lx,r+h+r+.24,0); g.add(l); });
+      attachFace(g, r+h+.02, -(r-.03), 1.12);
+      return g;
+    }
     var CAST = [
-      { id:'pencil',      name:'Pencil Dude', emoji:'✏️', build:buildPencil },
-      { id:'fork',        name:'Fork Man',    emoji:'🍴', build:buildFork },
-      { id:'crayon',      name:'Crayon Kid',  emoji:'🖍️', build:buildCrayon },
-      { id:'highlighter', name:'Highlighter', emoji:'🖊️', build:buildHighlighter },
-      { id:'mug',         name:'Mug Shot',    emoji:'☕', build:buildMug },
-      { id:'eraser',      name:'Big Eraser',  emoji:'🩹', build:buildEraser },
-      { id:'sticky',      name:'Sticky',      emoji:'📝', build:buildSticky },
-      { id:'glue',        name:'Glue Stick',  emoji:'🧴', build:buildGlue }
+      { id:'pencil',      name:'Coral',   emoji:'🔴', build:function(){ return makeGoGo(0xFF5A5F); } },
+      { id:'fork',        name:'Sunny',   emoji:'🟡', build:function(){ return makeGoGo(0xFFC93C); } },
+      { id:'crayon',      name:'Fern',    emoji:'🟢', build:function(){ return makeGoGo(0x2FBF71); } },
+      { id:'highlighter', name:'Sky',     emoji:'🔵', build:function(){ return makeGoGo(0x6fd3ff); } },
+      { id:'mug',         name:'Grape',   emoji:'🟣', build:function(){ return makeGoGo(0x8a53d6); } },
+      { id:'eraser',      name:'Blossom', emoji:'🩷', build:function(){ return makeGoGo(0xff9ec4); } },
+      { id:'sticky',      name:'Butter',  emoji:'🟠', build:function(){ return makeGoGo(0xFDD64B); } },
+      { id:'glue',        name:'Splash',  emoji:'🟦', build:function(){ return makeGoGo(0x23A6D5); } }
     ];
     var currentBody = null;
     function setCharacter(id){
