@@ -144,10 +144,6 @@
   <div id="turnBanner" style="display:none;font-family:'Fredoka',sans-serif;font-weight:700;font-size:24px;color:#fff;text-shadow:0 2px 0 #10233F"></div>
   <button class="bigbtn" id="btnMotion" style="display:none">ENABLE MOTION SENSORS</button>
   <div id="armState"></div>
-  <div id="phoneInstr" style="display:none">
-    Hold your phone in both hands like a golf grip, screen facing up, arms down at address.<br><br>
-    Tap <b>READY</b>, pause, then swing smoothly.
-  </div>
   <div id="clubRow" style="display:none; gap:8px; width:100%; max-width:340px;">
     <button class="clubBtn sel" data-club="driver">DRV</button>
     <button class="clubBtn" data-club="iron">IRON</button>
@@ -159,9 +155,8 @@
     <div id="aimVal" style="font-size:20px;font-weight:800;min-width:120px">AIM straight</div>
     <button class="bigbtn" id="btnAimR" style="width:86px">▶</button>
   </div>
-  <button class="bigbtn" id="btnArm" style="display:none">READY — THEN SWING</button>
+  <button class="bigbtn" id="btnArm" style="display:none">READY</button>
   <div id="phoneResult"></div>
-  <div class="warn">⛳ Grip it tight — GOGAMES is not responsible for airborne iPhones.</div>
 </div>
 
 <script>
@@ -1751,7 +1746,6 @@
     var status = document.getElementById('phoneStatus');
     var btnMotion = document.getElementById('btnMotion');
     var btnArm = document.getElementById('btnArm');
-    var instr = document.getElementById('phoneInstr');
     var result = document.getElementById('phoneResult');
     var armState = document.getElementById('armState');
     var aimRow = document.getElementById('aimRow');
@@ -1850,7 +1844,6 @@
         if (res.every(function(r){ return r==='granted'; })){
           motionOK = true; startSensors();
           btnMotion.style.display='none';
-          instr.style.display='block';
           btnArm.style.display='block';
           aimRow.style.display='flex';
           document.getElementById('clubRow').style.display='flex';
