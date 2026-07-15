@@ -128,7 +128,11 @@
     <div style="font-size:13px;font-weight:800;color:#8895a7;margin-bottom:6px;">Game mode</div>
     <button id="modeBtn" style="width:100%;font-family:'Nunito',sans-serif;font-size:15px;font-weight:900;padding:11px 0;border:3px solid #10233F;
       border-radius:12px;background:#FFC93C;color:#10233F;cursor:pointer;box-shadow:0 4px 0 rgba(16,35,63,.25)">MODE: RANGE</button>
-    <div style="font-size:12px;font-weight:800;margin-top:8px;"><a href="https://gogaminginc.github.io/gokart/" style="color:#FF5A5F;text-decoration:none;">🏎️ Play GOKART →</a></div>
+    <div style="font-size:13px;font-weight:800;color:#8895a7;margin:12px 0 6px;">Switch game</div>
+    <div style="display:flex;gap:6px;">
+      <a href="https://gogaminginc.github.io/gokart/" style="flex:1;text-align:center;background:#FF5A5F;color:#fff;text-decoration:none;font-weight:900;font-size:13px;padding:9px 6px;border:2px solid #10233F;border-radius:10px;">🏎️ GOKART</a>
+      <a href="https://gogaminginc.github.io/gosaber/" style="flex:1;text-align:center;background:#8a53d6;color:#fff;text-decoration:none;font-weight:900;font-size:13px;padding:9px 6px;border:2px solid #10233F;border-radius:10px;">⚔️ GOSABER</a>
+    </div>
     <div style="font-size:11px;font-weight:700;color:#8895a7;margin-top:8px;">click the Go Golf logo to close</div>
   </div>
   <div id="bigMsg"></div>
@@ -232,7 +236,7 @@
         stateMsg.textContent = 'Phone connected — enter your name on the phone';
       });
       c.on('data', function(msg){ onData(msg, c); });
-      c.on('close', function(){ removePlayer(c); });
+      c.on('close', function(){ markDisconnected(c); });
     });
 
     /* ---------- three.js scene ---------- */
@@ -1118,7 +1122,7 @@
 
     function onData(msg, c){
       if (!msg || !msg.t) return;
-      if (msg.t === 'join'){ registerPlayer(c, msg.name, msg.char); return; }
+      if (msg.t === 'join'){ registerPlayer(c, msg.name, msg.char, msg.cid); return; }
       var p = c ? playerByConn(c) : players[activeIdx];
       if (mode === 'course'){
         // turn-based: only the active player drives the ball, and not after they've holed
@@ -1210,11 +1214,26 @@
       g.visible = false; return g;
     }
     function sendTo(c, msg){ try { if (c && c.send) c.send(msg); } catch(e){} }
-    function registerPlayer(c, name, char){
+    function registerPlayer(c, name, char, cid){
+      // reconnect: a returning phone (same client id) reclaims its existing slot
+      if (cid){
+        for (var k=0;k<players.length;k++){
+          if (players[k].cid === cid){
+            var rp = players[k];
+            rp.conn = c; rp.disc = false;
+            if (name) rp.name = name; if (char) rp.char = char;
+            if (mode === 'course' && players[activeIdx] === rp) conn = c;
+            stateMsg.textContent = esc(rp.name) + ' reconnected';
+            renderStandings(); buildLobby(); if (mode === 'course') updateMarkers();
+            broadcastTurn();
+            return rp;
+          }
+        }
+      }
       var ex = playerByConn(c);
-      if (ex){ if (name) ex.name = name; if (char) ex.char = char; renderStandings(); buildLobby(); broadcastTurn(); return ex; }
+      if (ex){ if (name) ex.name = name; if (char) ex.char = char; if (cid) ex.cid = cid; renderStandings(); buildLobby(); broadcastTurn(); return ex; }
       var idx = players.length;
-      var p = { conn:c, name:(name || ('Player '+(idx+1))), char:(char||'pencil'),
+      var p = { conn:c, cid:cid||null, disc:false, name:(name || ('Player '+(idx+1))), char:(char||'pencil'),
         color:PCOL[idx%PCOL.length], colHex:PCOLHEX[idx%PCOLHEX.length],
         ballPos:new THREE.Vector3().copy(BALL_HOME), hs:0, holed:false, scores:[], total:0, club:'driver', marker:null };
       p.marker = makeMarker(p.color); scene.add(p.marker);
@@ -1227,6 +1246,15 @@
       if (mode === 'course') updateMarkers();
       broadcastTurn();
       return p;
+    }
+    function markDisconnected(c){
+      var p = playerByConn(c); if (!p) return;
+      p.disc = true;
+      stateMsg.textContent = esc(p.name) + ' dropped — will keep your spot to reconnect';
+      renderStandings(); buildLobby();
+      if (mode === 'course') updateMarkers();
+      // don't stall a live round waiting on a phone that's asleep
+      if (mode === 'course' && !roundOver && players[activeIdx] === p){ advanceTurn(); }
     }
     function removePlayer(c){
       var p = playerByConn(c); if (!p) return;
@@ -1260,6 +1288,8 @@
       if (!players.length) return;
       activeIdx = ((activeIdx % players.length) + players.length) % players.length;
       var p = players[activeIdx];
+      // skip anyone who's asleep/disconnected so play doesn't hang on them
+      if (mode === 'course' && p.disc){ advanceTurn(); return; }
       conn = p.conn;
       curClub = p.club || 'driver';
       if (mode === 'course'){
@@ -1280,7 +1310,7 @@
       if (mode !== 'course') return;
       var anyLive = false, best = -1, bd = -1;
       for (var i=0;i<players.length;i++){
-        if (players[i].holed) continue;
+        if (players[i].holed || players[i].disc) continue;
         anyLive = true;
         var d = players[i].ballPos.distanceTo(cupPos);
         if (d > bd){ bd = d; best = i; }
@@ -1297,6 +1327,7 @@
       players.forEach(function(p){ p.hs = 0; p.holed = false; p.ballPos.copy(BALL_HOME); });
       if (!players.length) return;
       activeIdx = 0;
+      for (var i=0;i<players.length;i++){ if (!players[i].disc){ activeIdx = i; break; } }
       beginTurn();
     }
     function holeSummary(){
@@ -1330,6 +1361,9 @@
       var el = document.getElementById('standings'); if (!el) return;
       if (mode !== 'course' || !players.length){ el.style.display = 'none'; return; }
       el.style.display = 'block';
+      // sit the leaderboard just below the course HUD so they never overlap
+      var hudEl = document.getElementById('hud');
+      if (hudEl){ el.style.top = Math.round(hudEl.getBoundingClientRect().bottom + 12) + 'px'; }
       var rows = players.map(function(p, i){
         var thru = p.scores.length;
         var rel = p.total - coursePar(thru);
@@ -1792,10 +1826,14 @@
     if (nameInput) nameInput.value = myName;
     var myChar = 'pencil';
     try { myChar = localStorage.getItem('gogames_character') || 'pencil'; } catch(e){}
+    // stable per-phone id so a refresh / sleep reclaims the same character instead of duplicating
+    var myCid = '';
+    try { myCid = localStorage.getItem('gogames_cid') || ''; } catch(e){}
+    if (!myCid){ myCid = 'c' + Math.random().toString(36).slice(2) + Date.now().toString(36); try { localStorage.setItem('gogames_cid', myCid); } catch(e){} }
     function sendJoin(){
       if (nameInput) myName = nameInput.value.trim() || myName;
       try { localStorage.setItem('gogolf_name', myName); } catch(e){}
-      if (conn && connected) conn.send({ t:'join', name: myName || 'Player', char: myChar });
+      if (conn && connected) conn.send({ t:'join', name: myName || 'Player', char: myChar, cid: myCid });
     }
     if (nameInput) nameInput.addEventListener('input', function(){ sendJoin(); });
 
