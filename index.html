@@ -1231,8 +1231,8 @@
         name:b.name, holed:b.holed, place:b.finishPlace, flying:b.flying,
         toPin:+(b.ball.position.distanceTo(cupPos)/YD).toFixed(1) }; }) }; },
       raceSwing: function(i, power){ var b=raceBalls[i||0]; if(b) raceLaunch(b, power||40); return b?b.name:null; },
-      raceResolve: function(i, power){ // synchronous: swing + settle for headless tests
-        var b=raceBalls[i||0]; if(!b) return 'no ball'; raceLaunch(b, power||40);
+      raceResolve: function(i, power, club){ // synchronous: swing + settle for headless tests
+        var b=raceBalls[i||0]; if(!b) return 'no ball'; if(club) b.club=club; raceLaunch(b, power||40);
         var guard=0; while(b.flying && guard++<8000) raceStep(b, 1/60);
         return { name:b.name, holed:b.holed, toPin:+(b.ball.position.distanceTo(cupPos)/YD).toFixed(1) };
       },
