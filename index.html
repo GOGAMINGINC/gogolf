@@ -1767,8 +1767,15 @@
       if (putting){ speed = 0.9+16*p; loftDeg=0; }
       else { var cl=CLUBS[b.club]||CLUBS.driver; speed=cl.min+(cl.max-cl.min)*Math.pow(p,1.15); loftDeg=cl.loft; }
       var loft=loftDeg*Math.PI/180, ar=(b.aimDeg||0)*Math.PI/180;
-      var f=baseDir, r=new THREE.Vector3(-f.z,0,f.x), h=Math.cos(loft)*speed;
-      b.vel.set((f.x*Math.cos(ar)+r.x*Math.sin(ar))*h, Math.sin(loft)*speed, (f.z*Math.cos(ar)+r.z*Math.sin(ar))*h);
+      // aim from the ball toward the cup (each player homes on the hole from wherever they are)
+      var f=new THREE.Vector3(cupPos.x-b.ball.position.x, 0, cupPos.z-b.ball.position.z);
+      if (f.lengthSq() < 1e-4) f.set(0,0,-1); else f.normalize();
+      var r=new THREE.Vector3(-f.z,0,f.x), h=Math.cos(loft)*speed;
+      var jit=(Math.random()-.5)*speed*.05; // slight shot spread so it's not a guaranteed ace
+      b.vel.set((f.x*Math.cos(ar)+r.x*Math.sin(ar))*h + r.x*jit, Math.sin(loft)*speed, (f.z*Math.cos(ar)+r.z*Math.sin(ar))*h + r.z*jit);
+      // face the golfer down its aim line
+      b.faceY = Math.atan2(f.x, f.z) + Math.PI;
+      b.golfer.rotation.y = b.faceY;
       b.flying=true; b.strokes++; b.swingT=performance.now();
       sfx(putting?'putt':'hit');
     }
@@ -1872,9 +1879,9 @@
     }
     function raceTick(now, dt){
       raceBalls.forEach(function(b){
-        if (b.swingT>0){ var st=(now-b.swingT)/1000;
-          if (st<.28){ b.golfer.rotation.y = Math.PI + Math.sin(st/.28*Math.PI)*0.95; }
-          else { b.golfer.rotation.y = Math.PI; b.swingT=-1; }
+        if (b.swingT>0){ var st=(now-b.swingT)/1000, base=(b.faceY!=null?b.faceY:Math.PI);
+          if (st<.28){ b.golfer.rotation.y = base + Math.sin(st/.28*Math.PI)*0.95; }
+          else { b.golfer.rotation.y = base; b.swingT=-1; }
         }
         if (b.flying){ var rem=dt; while(rem>0 && b.flying){ var sub=Math.min(rem,.033); raceStep(b, sub); rem-=sub; } }
       });
