@@ -85,6 +85,17 @@
   #armState { font-family:'Fredoka', sans-serif; font-size:28px; font-weight:700; color:#fff;
               text-shadow:0 2px 0 rgba(16,35,63,.3); }
   .warn { color:rgba(16,35,63,.78); font-weight:700; font-size:14px; max-width:340px; line-height:1.5; }
+  /* race mode split-screen labels + dividers */
+  #raceLabels { }
+  .raceLabel { position:fixed; z-index:17; min-width:150px; background:rgba(16,35,63,.82); border:3px solid #10233F;
+    border-radius:0 0 16px 0; padding:8px 12px; color:#fff; font-family:'Nunito',sans-serif; pointer-events:none; }
+  .raceLabel .rl-row { display:flex; align-items:center; gap:8px; }
+  .raceLabel .rl-dot { width:13px; height:13px; border-radius:50%; border:2px solid rgba(0,0,0,.4); }
+  .raceLabel .rl-name { font-weight:900; font-size:15px; flex:1; white-space:nowrap; }
+  .raceLabel .rl-sub { font-weight:800; font-size:13px; color:#cdd7e3; margin-top:2px; }
+  .raceLabel .rl-flash { font-family:'Fredoka',sans-serif; font-weight:700; font-size:15px; color:#FFC93C; margin-top:3px; text-shadow:0 2px 0 #10233F; }
+  #rDivH { position:fixed; left:0; right:0; top:50%; height:4px; margin-top:-2px; background:#10233F; z-index:16; display:none; }
+  #rDivV { position:fixed; top:0; bottom:0; left:50%; width:4px; margin-left:-2px; background:#10233F; z-index:16; display:none; }
 </style>
 </head>
 <body>
@@ -103,8 +114,10 @@
     <div class="hint" id="hostNetStatus">Starting connection service…</div>
     <div id="lobbyList" style="display:flex;flex-wrap:wrap;justify-content:center;max-width:560px"></div>
     <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin-top:4px">
-      <button id="startBtn" style="display:none;font-family:'Fredoka',sans-serif;font-weight:700;font-size:21px;padding:15px 32px;border:3px solid #10233F;border-radius:100px;background:#FF5A5F;color:#fff;box-shadow:0 6px 0 #c9353a">START ROUND ⛳</button>
-      <button id="rangeBtn" style="display:none;font-family:'Nunito',sans-serif;font-weight:900;font-size:15px;padding:15px 24px;border:3px solid #10233F;border-radius:100px;background:#FFC93C;color:#10233F;box-shadow:0 5px 0 #e0a916">FREE PLAY 🏌️</button>
+      <button id="hole3Btn" style="display:none;font-family:'Fredoka',sans-serif;font-weight:700;font-size:20px;padding:15px 28px;border:3px solid #10233F;border-radius:100px;background:#2FBF71;color:#fff;box-shadow:0 6px 0 #22a862">3-HOLE ⚡</button>
+      <button id="startBtn" style="display:none;font-family:'Fredoka',sans-serif;font-weight:700;font-size:20px;padding:15px 28px;border:3px solid #10233F;border-radius:100px;background:#FF5A5F;color:#fff;box-shadow:0 6px 0 #c9353a">FULL 9 ⛳</button>
+      <button id="raceBtn" style="display:none;font-family:'Fredoka',sans-serif;font-weight:700;font-size:20px;padding:15px 28px;border:3px solid #10233F;border-radius:100px;background:#8a53d6;color:#fff;box-shadow:0 6px 0 #6a3aad">RACE 🏁</button>
+      <button id="rangeBtn" style="display:none;font-family:'Nunito',sans-serif;font-weight:900;font-size:15px;padding:15px 22px;border:3px solid #10233F;border-radius:100px;background:#FFC93C;color:#10233F;box-shadow:0 5px 0 #e0a916">FREE PLAY 🏌️</button>
     </div>
   </div>
   <div id="hud">waiting for phone…</div>
@@ -136,6 +149,8 @@
     <div style="font-size:11px;font-weight:700;color:#8895a7;margin-top:8px;">click the Go Golf logo to close</div>
   </div>
   <div id="bigMsg"></div>
+  <div id="raceLabels" style="display:none"><div class="raceLabel"></div><div class="raceLabel"></div><div class="raceLabel"></div><div class="raceLabel"></div></div>
+  <div id="raceDividers" style="display:none"><div id="rDivH"></div><div id="rDivV"></div></div>
   <div id="scorecard" style="display:none;position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:25;background:#fff;color:#10233F;border:4px solid #10233F;border-radius:24px;padding:26px 30px;box-shadow:0 12px 0 rgba(16,35,63,.3);text-align:center;max-width:94vw;max-height:90vh;overflow:auto"></div>
   <div id="stateMsg">Waiting for controller</div>
 </div>
@@ -736,7 +751,7 @@
       if (mode !== 'course') return;
       var toPin = Math.round(ball.position.distanceTo(cupPos)/YD);
       var rel = totalStrokes - coursePar(holesDone);
-      hud.innerHTML = 'HOLE ' + (holeIdx+1) + '/' + courseData.length + ' · PAR ' + curHole.par +
+      hud.innerHTML = 'HOLE ' + (holeIdx+1) + '/' + roundHoles + ' · PAR ' + curHole.par +
         '<br>strokes: ' + strokes + ' · ' + toPin + ' yds to pin' +
         '<br>wind: ' + windText() +
         '<br>round: ' + (holesDone ? totalStrokes + ' (' + relScoreText(rel) + ')' : '—');
@@ -1072,8 +1087,14 @@
     });
 
     var mode = 'range';
+    var roundHoles = courseData.length; // how many holes this round runs (3 for a quick tournament, 9 for full)
     var modeBtn = document.getElementById('modeBtn');
     function setMode(m){
+      // leaving race mode: tear down the race scene + split viewports
+      if ((raceActive || (typeof raceBalls !== 'undefined' && raceBalls.length)) && m !== 'race'){
+        raceActive = false; clearRace(); hideRaceLabels();
+        renderer.setViewport(0,0,innerWidth,innerHeight); renderer.setScissorTest(false);
+      }
       mode = m;
       var _cp = document.getElementById('connectPanel'); if (_cp) _cp.style.display='none';
       flagsGroup.visible = (m === 'flags');
@@ -1109,8 +1130,13 @@
       var order = ['range','flags','course','putt'];
       setMode(order[(order.indexOf(mode) + 1) % order.length]);
     });
+    function startCourse(nHoles){ roundHoles = Math.max(1, Math.min(courseData.length, nHoles||courseData.length)); setMode('course'); }
     var startBtn = document.getElementById('startBtn');
-    if (startBtn) startBtn.addEventListener('click', function(){ setMode('course'); });
+    if (startBtn) startBtn.addEventListener('click', function(){ startCourse(courseData.length); });
+    var hole3Btn = document.getElementById('hole3Btn');
+    if (hole3Btn) hole3Btn.addEventListener('click', function(){ startCourse(3); });
+    var raceBtn = document.getElementById('raceBtn');
+    if (raceBtn) raceBtn.addEventListener('click', function(){ startRace(); });
     var rangeBtn = document.getElementById('rangeBtn');
     if (rangeBtn) rangeBtn.addEventListener('click', function(){ setMode('range'); });
 
@@ -1123,6 +1149,7 @@
     function onData(msg, c){
       if (!msg || !msg.t) return;
       if (msg.t === 'join'){ registerPlayer(c, msg.name, msg.char, msg.cid); return; }
+      if (mode === 'race'){ onRaceData(msg, c); return; }
       var p = c ? playerByConn(c) : players[activeIdx];
       if (mode === 'course'){
         // turn-based: only the active player drives the ball, and not after they've holed
@@ -1198,6 +1225,17 @@
         ball: { x:+ball.position.x.toFixed(1), y:+ball.position.y.toFixed(1), z:+ball.position.z.toFixed(1) },
         flying: flying, toPin: mode==='course' ? +(ball.position.distanceTo(cupPos)/YD).toFixed(1) : null }; },
       setMode: setMode,
+      startCourse: function(n){ startCourse(n); return roundHoles; },
+      startRace: function(){ startRace(); return raceBalls.length; },
+      raceState: function(){ return { active: raceActive, balls: raceBalls.map(function(b){ return {
+        name:b.name, holed:b.holed, place:b.finishPlace, flying:b.flying,
+        toPin:+(b.ball.position.distanceTo(cupPos)/YD).toFixed(1) }; }) }; },
+      raceSwing: function(i, power){ var b=raceBalls[i||0]; if(b) raceLaunch(b, power||40); return b?b.name:null; },
+      raceResolve: function(i, power){ // synchronous: swing + settle for headless tests
+        var b=raceBalls[i||0]; if(!b) return 'no ball'; raceLaunch(b, power||40);
+        var guard=0; while(b.flying && guard++<8000) raceStep(b, 1/60);
+        return { name:b.name, holed:b.holed, toPin:+(b.ball.position.distanceTo(cupPos)/YD).toFixed(1) };
+      },
       render: function(){ renderer.render(scene, camera); }
     };
 
@@ -1337,7 +1375,7 @@
     function finishHole(){
       holesDone = holeIdx + 1;
       renderStandings();
-      if (holeIdx >= courseData.length - 1){
+      if (holeIdx >= roundHoles - 1){
         roundOver = true;
         showFinalScorecard();
       } else {
@@ -1378,19 +1416,19 @@
     }
     function buildLobby(){
       var el = document.getElementById('lobbyList'); if (!el) return;
-      var btn = document.getElementById('startBtn'), rb = document.getElementById('rangeBtn');
-      if (!players.length){ el.innerHTML = ''; if (btn) btn.style.display='none'; if (rb) rb.style.display='none'; return; }
+      var ids = ['hole3Btn','startBtn','raceBtn','rangeBtn'];
+      var btns = ids.map(function(id){ return document.getElementById(id); });
+      if (!players.length){ el.innerHTML = ''; btns.forEach(function(b){ if (b) b.style.display='none'; }); return; }
       el.innerHTML = players.map(function(p){
         return '<span style="display:inline-flex;align-items:center;gap:7px;background:#fff;color:#10233F;border:3px solid #10233F;border-radius:100px;padding:7px 15px;margin:5px;font-weight:800;box-shadow:0 3px 0 rgba(16,35,63,.25)">' +
           '<span style="width:13px;height:13px;border-radius:50%;background:' + p.colHex + '"></span>' + esc(p.name) + '</span>';
       }).join('');
-      if (btn) btn.style.display = 'inline-block';
-      if (rb) rb.style.display = 'inline-block';
+      btns.forEach(function(b){ if (b) b.style.display='inline-block'; });
     }
     function hideScorecard(){ var el = document.getElementById('scorecard'); if (el) el.style.display='none'; }
     function showFinalScorecard(){
       var ranked = players.slice().sort(function(a,b){ return a.total - b.total; });
-      var winner = ranked[0], par = coursePar(courseData.length);
+      var winner = ranked[0], par = coursePar(roundHoles);
       if (winner){
         try {
           var oldRec = +localStorage.getItem('gogolf_best_round') || null;
@@ -1398,11 +1436,11 @@
         } catch(e){}
       }
       var head = '<tr><th style="text-align:left;padding:5px 8px">Player</th>';
-      for (var h=0;h<courseData.length;h++) head += '<th style="padding:5px 7px">' + (h+1) + '</th>';
+      for (var h=0;h<roundHoles;h++) head += '<th style="padding:5px 7px">' + (h+1) + '</th>';
       head += '<th style="padding:5px 8px">Tot</th><th style="padding:5px 8px">+/-</th></tr>';
       var body = ranked.map(function(p, r){
         var cells = '';
-        for (var h=0;h<courseData.length;h++) cells += '<td style="padding:5px 7px;text-align:center">' + (p.scores[h]!=null?p.scores[h]:'-') + '</td>';
+        for (var h=0;h<roundHoles;h++) cells += '<td style="padding:5px 7px;text-align:center">' + (p.scores[h]!=null?p.scores[h]:'-') + '</td>';
         var rel = p.total - par;
         return '<tr style="' + (r===0?'font-weight:900;background:rgba(255,201,60,.3)':'') + '">' +
           '<td style="padding:5px 8px;white-space:nowrap"><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:' + p.colHex + ';margin-right:7px"></span>' +
@@ -1412,7 +1450,7 @@
       }).join('');
       var el = document.getElementById('scorecard');
       if (el){
-        el.innerHTML = '<div style="font-family:Fredoka,sans-serif;font-weight:700;font-size:34px;margin-bottom:6px">🏁 ROUND COMPLETE</div>' +
+        el.innerHTML = '<div style="font-family:Fredoka,sans-serif;font-weight:700;font-size:34px;margin-bottom:6px">🏁 ' + (roundHoles < courseData.length ? roundHoles + '-HOLE TOURNAMENT' : 'ROUND') + ' COMPLETE</div>' +
           (winner ? '<div style="font-size:20px;margin-bottom:14px">Winner: <b>' + esc(winner.name) + '</b> · ' + winner.total + ' (' + relScoreText(winner.total-par) + ')</div>' : '') +
           '<table style="border-collapse:collapse;margin:0 auto;font-size:15px">' + head + body + '</table>' +
           '<div style="font-size:14px;margin-top:16px;opacity:.85">tap READY on any phone to play again</div>';
@@ -1669,9 +1707,188 @@
         }
       }
     }
+    /* ================= RACE MODE — real-time, split-screen, first to sink wins ================= */
+    var raceBalls = [], raceActive = false;
+    function ordinalSuffix(n){ return n===1?'st':n===2?'nd':n===3?'rd':'th'; }
+    function raceOnGreen(pos){ if(!curHole) return false; var dx=pos.x-cupPos.x, dz=pos.z-cupPos.z; return Math.sqrt(dx*dx+dz*dz) < curHole.greenR; }
+    function clearRace(){ raceBalls.forEach(function(b){ scene.remove(b.ball); scene.remove(b.golfer); }); raceBalls = []; }
+    function raceBallByConn(c){ for(var i=0;i<raceBalls.length;i++) if(raceBalls[i].conn===c) return raceBalls[i]; return null; }
+    function hideRaceLabels(){
+      document.getElementById('raceLabels').style.display='none';
+      document.getElementById('raceDividers').style.display='none';
+      document.getElementById('rDivH').style.display='none';
+      document.getElementById('rDivV').style.display='none';
+    }
+    function startRace(){
+      var roster = players.filter(function(p){ return p.conn; });
+      if (!roster.length) roster = players.slice(); // allow a demo start
+      if (!roster.length){ stateMsg.textContent = 'Need at least one phone to race!'; return; }
+      mode = 'race'; roundOver = false; raceActive = true;
+      var _cp = document.getElementById('connectPanel'); if (_cp) _cp.style.display='none';
+      flagsGroup.visible=false; puttGroup.visible=false; rangeGroup.visible=false; courseGroup.visible=true;
+      buildHole(0); // reuse the short opening hole as the race arena
+      hideScorecard(); bigMsg.style.display='none';
+      clearRace();
+      var n = roster.length;
+      roster.forEach(function(p, i){
+        var golfer = makeGoGo(p.color); golfer.rotation.y = Math.PI; scene.add(golfer);
+        var ball = new THREE.Mesh(new THREE.SphereGeometry(.34,16,16), new THREE.MeshStandardMaterial({color:0xffffff, emissive:0x111111}));
+        ball.castShadow = true; scene.add(ball);
+        var tx = BALL_HOME.x + (i - (n-1)/2) * 2.3;
+        var home = new THREE.Vector3(tx, .49, BALL_HOME.z);
+        ball.position.copy(home);
+        golfer.position.set(tx - .85, 0, BALL_HOME.z + .2);
+        var b = { player:p, conn:p.conn, name:p.name, color:p.color, colHex:p.colHex, ball:ball, golfer:golfer,
+          vel:new THREE.Vector3(), flying:false, holed:false, home:home, club:(p.club||'driver'), aimDeg:0,
+          swingT:-1, cam:new THREE.PerspectiveCamera(52,1,.1,400), lastPutt:false, finishPlace:0, strokes:0, flash:'', flashUntil:0 };
+        aimCamRace(b.cam, b, true);
+        raceBalls.push(b);
+        sendTo(p.conn, { t:'turn', your:true, mode:'race', who:'' });
+        sendTo(p.conn, { t:'result', yards:0, line2:'🏁 RACE! First to sink wins — swing!' });
+      });
+      stateMsg.textContent = '🏁 RACE! First to sink the ball wins — everyone swing at once!';
+      bigMsg.innerHTML = '🏁 RACE!<br><span style="font-size:26px;color:#eaffea">first to hole out wins · strokes don\'t matter</span>';
+      bigMsg.style.display='block';
+      setTimeout(function(){ if(raceActive) bigMsg.style.display='none'; }, 1800);
+    }
+    function aimCamRace(cam, b, snap){
+      var bp=b.ball.position;
+      var want = new THREE.Vector3(bp.x, 3.5, bp.z + 8.5);
+      if (snap) cam.position.copy(want); else cam.position.lerp(want, .14);
+      var look = b.flying ? new THREE.Vector3(bp.x, Math.max(bp.y,1), bp.z)
+                          : new THREE.Vector3((bp.x+cupPos.x)/2, 1.1, (bp.z+cupPos.z)/2);
+      cam.lookAt(look);
+    }
+    function raceLaunch(b, power){
+      var putting = raceOnGreen(b.ball.position) || b.club==='putter';
+      var p = putting ? THREE.MathUtils.clamp((power-5)/40,.02,1) : THREE.MathUtils.clamp((power-E_MIN)/E_SPAN,.02,1);
+      b.lastPutt = putting;
+      var speed, loftDeg;
+      if (putting){ speed = 0.9+16*p; loftDeg=0; }
+      else { var cl=CLUBS[b.club]||CLUBS.driver; speed=cl.min+(cl.max-cl.min)*Math.pow(p,1.15); loftDeg=cl.loft; }
+      var loft=loftDeg*Math.PI/180, ar=(b.aimDeg||0)*Math.PI/180;
+      var f=baseDir, r=new THREE.Vector3(-f.z,0,f.x), h=Math.cos(loft)*speed;
+      b.vel.set((f.x*Math.cos(ar)+r.x*Math.sin(ar))*h, Math.sin(loft)*speed, (f.z*Math.cos(ar)+r.z*Math.sin(ar))*h);
+      b.flying=true; b.strokes++; b.swingT=performance.now();
+      sfx(putting?'putt':'hit');
+    }
+    function raceStep(b, dt){
+      b.vel.y -= 9.81*dt;
+      b.vel.multiplyScalar(1 - 0.015*dt*60*0.02);
+      var pos = b.ball.position;
+      pos.addScaledVector(b.vel, dt);
+      // cup capture (a slow ball near the hole drops in)
+      if (b.flying && pos.y <= .55){
+        var dxc=pos.x-cupPos.x, dzc=pos.z-cupPos.z, dc=Math.sqrt(dxc*dxc+dzc*dzc), sp=b.vel.length();
+        if (dc < .5 && sp < 2.4){ pos.set(cupPos.x,-.06,cupPos.z); b.vel.set(0,0,0); raceSink(b); return; }
+        else if (dc < .45 && sp >= 2.4){ b.vel.x*=-.35; b.vel.z*=-.35; }
+      }
+      if (pos.y <= .27){
+        pos.y = .27;
+        if (Math.abs(b.vel.y) > 2){ b.vel.y = -b.vel.y*.33; b.vel.x*=.72; b.vel.z*=.72; }
+        else {
+          b.vel.y = 0;
+          var onG = raceOnGreen(pos);
+          var fr = onG ? .985 : (b.lastPutt ? .97 : .93);
+          b.vel.x *= fr; b.vel.z *= fr;
+          if (b.vel.length() < ((onG||b.lastPutt) ? .35 : 1)) raceSettle(b);
+        }
+      }
+      // keep it on the planet — if it flies way out, just drop it and settle
+      if (pos.z > 25 || pos.z < cupPos.z - 60 || Math.abs(pos.x) > 60){
+        b.vel.multiplyScalar(.5);
+        if (pos.y <= .27) raceSettle(b);
+      }
+    }
+    function raceSettle(b){
+      if (b.holed) return;
+      b.flying=false; b.vel.set(0,0,0);
+      b.golfer.position.set(b.ball.position.x - .85, 0, b.ball.position.z + .2);
+      var toPin = Math.round(b.ball.position.distanceTo(cupPos)/YD);
+      sendTo(b.conn, { t:'turn', your:true, mode:'race', who:'' });
+      sendTo(b.conn, { t:'result', yards: toPin, line2: toPin + ' yds to pin — swing again!' });
+    }
+    function raceSink(b){
+      if (b.holed) return;
+      b.holed=true; b.flying=false; b.vel.set(0,0,0);
+      b.ball.position.set(cupPos.x, -.06, cupPos.z);
+      var placed = raceBalls.filter(function(x){ return x.holed; }).length;
+      b.finishPlace = placed;
+      b.flash = (placed===1?'🏆 WON!':'🏁 HOLED'); b.flashUntil = performance.now()+4000;
+      sfx('drop'); setTimeout(function(){ sfx('cheer'); }, 250);
+      sendTo(b.conn, { t:'result', yards:0, line2:(placed===1?'🏆 YOU WON THE RACE!':'holed — '+placed+ordinalSuffix(placed)) });
+      if (placed === 1) raceWin(b);
+    }
+    function raceWin(winner){
+      raceActive=false;
+      bigMsg.innerHTML='🏁 '+esc(winner.name)+' WINS!<br><span style="font-size:24px;color:#eaffea">first to hole out</span><br><span style="font-size:18px">tap READY on a phone to race again</span>';
+      bigMsg.style.display='block';
+      stateMsg.textContent='🏁 '+winner.name+' wins the race!';
+      raceBalls.forEach(function(b){ sendTo(b.conn, { t:'result', yards:0, line2:(b===winner?'🏆 CHAMPION!':esc(winner.name)+' won — tap READY to rematch') }); });
+    }
+    function onRaceData(msg, c){
+      if (msg.t === 'arm'){ if (!raceActive) startRace(); return; }
+      var b = raceBallByConn(c); if (!b) return;
+      if (msg.t === 'club'){ b.club = msg.club || 'driver'; }
+      else if (msg.t === 'aim'){ b.aimDeg = msg.v || 0; }
+      else if (msg.t === 'swing'){ if (raceActive && !b.holed && !b.flying) raceLaunch(b, msg.power || 25); }
+    }
+    function raceRects(n, W, H){
+      var r=[];
+      if (n<=1){ r.push({x:0,y:0,w:W,h:H,dl:0,dt:0}); }
+      else if (n===2){ r.push({x:0,y:0,w:Math.floor(W/2),h:H,dl:0,dt:0}); r.push({x:Math.floor(W/2),y:0,w:W-Math.floor(W/2),h:H,dl:Math.floor(W/2),dt:0}); }
+      else { var w=Math.floor(W/2),h=Math.floor(H/2),g=[[0,0],[1,0],[0,1],[1,1]];
+        for(var i=0;i<n;i++){ var c=g[i][0], rw=g[i][1]; r.push({x:c*w,y:(rw===0?H-h:0),w:w,h:h,dl:c*w,dt:(rw===0?0:h)}); } }
+      return r;
+    }
+    function updateRaceLabels(rects){
+      var wrap=document.getElementById('raceLabels'), labs=wrap.children, now=performance.now();
+      wrap.style.display='block';
+      for (var i=0;i<4;i++){ var el=labs[i];
+        if (i<raceBalls.length){ var b=raceBalls[i], rc=rects[i], toPin=Math.round(b.ball.position.distanceTo(cupPos)/YD);
+          el.style.display='block'; el.style.left=rc.dl+'px'; el.style.top=rc.dt+'px'; el.style.borderColor=b.colHex;
+          el.innerHTML='<div class="rl-row"><span class="rl-dot" style="background:'+b.colHex+'"></span><span class="rl-name">'+esc(b.name)+'</span></div>'+
+            '<div class="rl-sub">'+(b.holed?'✓ holed — '+b.finishPlace+ordinalSuffix(b.finishPlace):toPin+' yds to pin')+'</div>'+
+            ((b.flash && now<b.flashUntil)?'<div class="rl-flash">'+b.flash+'</div>':'');
+        } else el.style.display='none';
+      }
+      var n=raceBalls.length;
+      document.getElementById('raceDividers').style.display='block';
+      document.getElementById('rDivV').style.display = (n>=2)?'block':'none';
+      document.getElementById('rDivH').style.display = (n>=3)?'block':'none';
+    }
+    function renderRace(dt){
+      var W=innerWidth, H=innerHeight, n=raceBalls.length; if(!n){ return; }
+      var rects=raceRects(n,W,H);
+      renderer.setScissorTest(true);
+      for (var i=0;i<n;i++){
+        var rc=rects[i], b=raceBalls[i];
+        aimCamRace(b.cam, b, false); b.cam.aspect=rc.w/rc.h; b.cam.updateProjectionMatrix();
+        renderer.setViewport(rc.x,rc.y,rc.w,rc.h); renderer.setScissor(rc.x,rc.y,rc.w,rc.h);
+        renderer.render(scene, b.cam);
+      }
+      renderer.setScissorTest(false); renderer.setViewport(0,0,W,H);
+      updateRaceLabels(rects);
+    }
+    function raceTick(now, dt){
+      raceBalls.forEach(function(b){
+        if (b.swingT>0){ var st=(now-b.swingT)/1000;
+          if (st<.28){ b.golfer.rotation.y = Math.PI + Math.sin(st/.28*Math.PI)*0.95; }
+          else { b.golfer.rotation.y = Math.PI; b.swingT=-1; }
+        }
+        if (b.flying){ var rem=dt; while(rem>0 && b.flying){ var sub=Math.min(rem,.033); raceStep(b, sub); rem-=sub; } }
+      });
+    }
+
     function tick(now){
       schedule();
       var dt = Math.min((now-last)/1000, 2); last = now;
+
+      if (mode === 'race'){
+        raceTick(now, dt);
+        if (!document.hidden) renderRace(dt);
+        return;
+      }
 
       // swing animation, synced to the real swing
       var a = 0;
@@ -1686,12 +1903,13 @@
         }
         if (swingAnim && swingAnim.tDown !== null){
           var td = (now - swingAnim.tDown) / 1000;
-          var DOWN = .20, HOLD = 1.0, RET = 1.6;
+          var DOWN = .11, HOLD = .9, RET = 1.5; // faster downswing so contact lands right when the real swing does
           if (td < DOWN){ var f2 = td/DOWN; a = -2.3 + 4.7*f2*f2; }
           else if (td < HOLD){ a = 2.4; }
           else if (td < RET){ var f3 = (td-HOLD)/(RET-HOLD); a = 2.4*(1-(f3*f3*(3-2*f3))); }
           else { swingAnim = null; a = 0; }
-          if (swingAnim && !swingAnim.launched && td >= DOWN*.7){
+          // launch almost immediately — the ball leaves the club the moment the swing is detected
+          if (swingAnim && !swingAnim.launched && td >= DOWN*.35){
             swingAnim.launched = true;
             launch(swingAnim.power);
           }
@@ -1856,6 +2074,14 @@
         if (msg && msg.t==='turn'){
           myTurn = !!msg.your;
           turnBanner.style.display = 'block';
+          if (msg.mode === 'race'){ // everyone plays at once — auto-arm for the next swing
+            myTurn = true; armed = true;
+            turnBanner.style.color = '#ffe08a';
+            turnBanner.textContent = '🏁 RACE — swing to your hole!';
+            btnArm.disabled = false;
+            if (!swinging) armState.textContent = '🟢 ARMED — swing!';
+            return;
+          }
           if (myTurn){
             turnBanner.style.color = '#eaffea';
             turnBanner.textContent = (msg.mode === 'course') ? '⛳ YOUR TURN!' : '🏌️ Swing away!';
@@ -1967,7 +2193,7 @@
           }
           else {
             if (!quietSince) quietSince = now;
-            if (now - quietSince > 140){
+            if (now - quietSince > 80){ // shorter confirm window → the ball fires closer to the real swing moment
               // a swing only counts once the club has come back THROUGH the ball:
               // holding at the top leaves the club angle near its peak, so we wait.
               // the tolerance scales down for tiny strokes (putts rotate just a few
